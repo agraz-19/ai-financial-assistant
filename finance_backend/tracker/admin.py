@@ -1,31 +1,38 @@
 from django.contrib import admin
 
-from .models import Category, Statement, Transaction, User
-
-
-@admin.register(User)
-class UserAdmin(admin.ModelAdmin):
-    list_display = ("username", "email", "upi_id", "phone_number", "is_staff")
-    search_fields = ("username", "email", "upi_id", "phone_number")
+from .models import Category, Statement, Transaction, MonthlyInsight, ChatMessage
 
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "owner", "color", "is_ai_generated", "created_at")
-    search_fields = ("name", "owner__username")
-    list_filter = ("is_ai_generated", "created_at")
+    list_display = ("name", "is_default")
+    search_fields = ("name",)
+    list_filter = ("is_default",)
 
 
 @admin.register(Statement)
 class StatementAdmin(admin.ModelAdmin):
-    list_display = ("filename", "uploaded_by", "statement_date", "status", "uploaded_at")
-    search_fields = ("filename", "uploaded_by__username", "source_name")
-    list_filter = ("status", "uploaded_at")
+    list_display = ("file", "user", "file_type", "status", "uploaded_at")
+    search_fields = ("file", "user__username")
+    list_filter = ("status", "file_type", "uploaded_at")
 
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display = ("transaction_date", "user", "amount", "direction", "category", "merchant_name")
-    search_fields = ("description", "merchant_name", "reference_id")
-    list_filter = ("direction", "transaction_date", "category")
+    list_display = ("date", "user", "amount", "category", "is_ai_categorized")
+    search_fields = ("description", "user__username")
+    list_filter = ("category", "is_ai_categorized", "date")
 
+
+@admin.register(MonthlyInsight)
+class MonthlyInsightAdmin(admin.ModelAdmin):
+    list_display = ("user", "month", "total_spent", "total_income", "generated_at")
+    search_fields = ("user__username",)
+    list_filter = ("month",)
+
+
+@admin.register(ChatMessage)
+class ChatMessageAdmin(admin.ModelAdmin):
+    list_display = ("user", "role", "created_at")
+    search_fields = ("user__username", "content")
+    list_filter = ("role", "created_at")

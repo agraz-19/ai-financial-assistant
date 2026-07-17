@@ -1,80 +1,122 @@
-from django.conf import settings
-from django.contrib.auth.models import AbstractUser
-from django.core.validators import MinValueValidator
 from django.db import models
-
-
-class User(AbstractUser):
-    upi_id = models.CharField(max_length=255, blank=True, unique=True, null=True)
-    phone_number = models.CharField(max_length=20, blank=True)
-
-    def __str__(self) -> str:
-        return self.get_username()
+from django.contrib.auth.models import User
 
 
 class Category(models.Model):
-    name = models.CharField(max_length=120)
-    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="categories")
-    color = models.CharField(max_length=7, default="#2563eb")
-    is_ai_generated = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
+    """
+    Spending categories (Groceries, Dining, Subscriptions, etc.)
+    Seed a default set via a data migration or fixture later.
+    """
+    name = models.CharField(max_length=100, unique=True)
+    is_default = models.BooleanField(default=False)  # system categories vs user-created
 
     class Meta:
-        unique_together = ("owner", "name")
-        ordering = ["name"]
+        verbose_name_plural = "Categories"
 
-    def __str__(self) -> str:
+    def __str__(self):
         return self.name
 
 
 class Statement(models.Model):
+    """
+    A single uploaded bank statement file (CSV or PDF).
+    Tracks parsing status so the UI can show progress/errors.
+    """
+    class FileType(models.TextChoices):
+        CSV = "CSV", "CSV"
+        PDF = "PDF", "PDF"
+
     class Status(models.TextChoices):
-        UPLOADED = "uploaded", "Uploaded"
-        PARSED = "parsed", "Parsed"
-        FAILED = "failed", "Failed"
+        UPLOADED = "UPLOADED", "Uploaded"
+        PROCESSING = "PROCESSING", "Processing"
+        COMPLETED = "COMPLETED", "Completed"
+        FAILED = "FAILED", "Failed"
 
-    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="statements")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="statements")
     file = models.FileField(upload_to="statements/%Y/%m/")
-    filename = models.CharField(max_length=255)
-    source_name = models.CharField(max_length=255, blank=True)
-    statement_date = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.UPLOADED)
-    parsed_data = models.JSONField(default=dict, blank=True)
+    file_type = models.CharField(max_length=3, choices=FileType.choices)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.UPLOADED)
+    error_message = models.TextField(blank=True, null=True)  # populated if parsing fails
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(blank=True, null=True)
 
-    class Meta:
-        ordering = ["-uploaded_at"]
-
-    def __str__(self) -> str:
-        return self.filename
+    def __str__(self):
+        return f"{self.user.username} - {self.file.name} ({self.status})"
 
 
 class Transaction(models.Model):
-    class Direction(models.TextChoices):
-        DEBIT = "debit", "Debit"
-        CREDIT = "credit", "Credit"
+    """
+    A single parsed transaction line from a statement.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="transactions")
+    statement = models.ForeignKey(
+        Statement, on_delete=models.CASCADE, related_name="transactions",
+        blank=True, null=True  # allow manual entries not tied to an upload, if you add that later
+    )
+    date = models.DateField()
+    description = models.CharField(max_length=500)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)  # negative = expense, positive = income (pick one convention and stay consistent)
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="transactions")
-    statement = models.ForeignKey(Statement, on_delete=models.SET_NULL, null=True, blank=True, related_name="transactions")
-    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True, related_name="transactions")
-    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
-    direction = models.CharField(max_length=10, choices=Direction.choices, default=Direction.DEBIT)
-    transaction_date = models.DateTimeField()
-    merchant_name = models.CharField(max_length=255, blank=True)
-    counterparty = models.CharField(max_length=255, blank=True)
-    description = models.TextField(blank=True)
-    reference_id = models.CharField(max_length=255, blank=True, db_index=True)
-    confidence_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
-    metadata = models.JSONField(default=dict, blank=True)
+    category = models.ForeignKey(
+        Category, on_delete=models.SET_NULL, related_name="transactions",
+        blank=True, null=True  # null until the AI categorizes it
+    )
+    category_confidence = models.FloatField(blank=True, null=True)  # optional: store how confident the LLM was
+    is_ai_categorized = models.BooleanField(default=False)  # False if user manually overrode it
+
+    # RAG support: store the embedding vector's ID in Chroma, not the vector itself
+    chroma_id = models.CharField(max_length=64, blank=True, null=True, unique=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-transaction_date", "-id"]
+        ordering = ["-date"]
         indexes = [
-            models.Index(fields=["user", "transaction_date"]),
-            models.Index(fields=["reference_id"]),
+            models.Index(fields=["user", "date"]),
+            models.Index(fields=["user", "category"]),
         ]
 
-    def __str__(self) -> str:
-        return f"{self.transaction_date:%Y-%m-%d} - {self.amount}"
+    def __str__(self):
+        return f"{self.date} | {self.description[:40]} | {self.amount}"
 
+
+class MonthlyInsight(models.Model):
+    """
+    Cached AI-generated monthly summary (this is what gets Redis-cached too,
+    but storing it in Postgres means it persists even if the cache is cleared).
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="insights")
+    month = models.DateField()  # store as the 1st of the month, e.g. 2026-07-01
+    summary_text = models.TextField()  # the AI-generated narrative summary
+    total_spent = models.DecimalField(max_digits=12, decimal_places=2)
+    total_income = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    budget_recommendation = models.TextField(blank=True, null=True)
+    generated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "month")
+        ordering = ["-month"]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.month.strftime('%B %Y')}"
+
+
+class ChatMessage(models.Model):
+    """
+    RAG chat history — lets you show a conversation thread in the UI
+    and optionally use recent messages as context for follow-up questions.
+    """
+    class Role(models.TextChoices):
+        USER = "USER", "User"
+        ASSISTANT = "ASSISTANT", "Assistant"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="chat_messages")
+    role = models.CharField(max_length=10, choices=Role.choices)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.user.username} [{self.role}]: {self.content[:50]}"
