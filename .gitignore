@@ -1,0 +1,22 @@
+# Python / Django
+*.pyc
+__pycache__/
+.env
+.venv/
+venv/
+env/
+db.sqlite3
+finance_backend/media/*
+!finance_backend/media/.gitkeep
+finance_backend/staticfiles/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
