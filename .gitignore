@@ -1,7 +1,7 @@
 # Python / Django
 *.pyc
 __pycache__/
-.env
+finance_backend/.env
 .venv/
 venv/
 env/

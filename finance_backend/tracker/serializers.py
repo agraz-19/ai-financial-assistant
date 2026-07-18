@@ -1,68 +1,50 @@
-from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import Category, Statement, Transaction
-
-User = get_user_model()
-
-
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = [
-            "id",
-            "username",
-            "first_name",
-            "last_name",
-            "email",
-            "upi_id",
-            "phone_number",
-        ]
-        read_only_fields = ["id"]
+from .models import Category, ChatMessage, MonthlyInsight, Statement, Transaction
 
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ["id", "name", "owner", "color", "is_ai_generated", "created_at"]
-        read_only_fields = ["id", "owner", "created_at"]
+        fields = ["id", "name", "is_default"]
+        read_only_fields = ["is_default"]
 
 
 class StatementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Statement
         fields = [
-            "id",
-            "uploaded_by",
-            "file",
-            "filename",
-            "source_name",
-            "statement_date",
-            "status",
-            "parsed_data",
-            "uploaded_at",
+            "id", "file", "file_type", "status",
+            "error_message", "uploaded_at", "processed_at",
         ]
-        read_only_fields = ["id", "uploaded_by", "status", "parsed_data", "uploaded_at"]
+        read_only_fields = ["status", "error_message", "uploaded_at", "processed_at"]
 
 
 class TransactionSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
+
     class Meta:
         model = Transaction
         fields = [
-            "id",
-            "user",
-            "statement",
-            "category",
-            "amount",
-            "direction",
-            "transaction_date",
-            "merchant_name",
-            "counterparty",
-            "description",
-            "reference_id",
-            "confidence_score",
-            "metadata",
-            "created_at",
+            "id", "statement", "date", "description", "amount",
+            "category", "category_name", "category_confidence",
+            "is_ai_categorized", "created_at",
         ]
-        read_only_fields = ["id", "user", "created_at"]
+        read_only_fields = ["category_confidence", "is_ai_categorized", "created_at"]
 
+
+class MonthlyInsightSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MonthlyInsight
+        fields = [
+            "id", "month", "summary_text", "total_spent",
+            "total_income", "budget_recommendation", "generated_at",
+        ]
+        read_only_fields = fields
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChatMessage
+        fields = ["id", "role", "content", "created_at"]
+        read_only_fields = ["created_at"]
