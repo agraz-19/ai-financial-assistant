@@ -22,6 +22,30 @@ class TransactionAdmin(admin.ModelAdmin):
     list_display = ("date", "user", "amount", "category", "is_ai_categorized")
     search_fields = ("description", "user__username")
     list_filter = ("category", "is_ai_categorized", "date")
+    actions = ["report_exact_duplicate_transactions"]
+
+    @admin.action(description="Report exact duplicate transactions")
+    def report_exact_duplicate_transactions(self, request, queryset):
+        seen = {}
+        duplicate_ids = set()
+
+        for txn in queryset.order_by("user_id", "date", "description", "amount", "id"):
+            key = (txn.user_id, txn.date, txn.description.strip().lower(), txn.amount)
+            if key in seen:
+                duplicate_ids.add(txn.id)
+                duplicate_ids.add(seen[key])
+            else:
+                seen[key] = txn.id
+
+        if duplicate_ids:
+            count = queryset.model.objects.filter(id__in=duplicate_ids).count()
+            self.message_user(
+                request,
+                f"Found {count} exact duplicate transaction rows in the selected set.",
+                level="warning",
+            )
+        else:
+            self.message_user(request, "No exact duplicate transactions found in the selected set.")
 
 
 @admin.register(MonthlyInsight)

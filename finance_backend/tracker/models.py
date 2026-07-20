@@ -34,11 +34,17 @@ class Statement(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="statements")
     file = models.FileField(upload_to="statements/%Y/%m/")
+    file_hash = models.CharField(max_length=64, blank=True, db_index=True)
     file_type = models.CharField(max_length=3, choices=FileType.choices)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.UPLOADED)
     error_message = models.TextField(blank=True, null=True)  # populated if parsing fails
     uploaded_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "file_hash"], name="unique_statement_file_per_user"),
+        ]
 
     def __str__(self):
         return f"{self.user.username} - {self.file.name} ({self.status})"
