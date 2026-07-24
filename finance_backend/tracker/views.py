@@ -11,10 +11,12 @@ from rest_framework import permissions, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .ai.categorize import run_categorization_for_statement
-from .models import Category, Statement, Transaction
+from .ai.rag_chat import ask_and_save
+from .models import Category, Statement, Transaction, ChatMessage
 from .parsers.csv_parser import CSVParseError, parse_csv_statement, save_transactions
 from .services.insights import build_dashboard_context, generate_monthly_insight
 from .serializers import CategorySerializer, StatementSerializer, TransactionSerializer
+from .ai.embeddings import embed_transactions_for_statement
 
 
 # --- Template views (Phase 1) ---------------------------------------------
@@ -107,6 +109,9 @@ def upload_statement(request):
                     categorized_count = run_categorization_for_statement(statement)
                     if categorized_count:
                         messages.success(request, f"AI categorized {categorized_count} transactions.")
+                    embedded_count = embed_transactions_for_statement(statement)
+                    if embedded_count:
+                        messages.success(request, f"Embedded {embedded_count} transactions for search.")
                     try:
                         generate_monthly_insight(request.user)
                     except Exception as insight_error:
@@ -124,6 +129,18 @@ def upload_statement(request):
         return redirect("home")
 
     return render(request, "upload_statement.html")
+
+
+@login_required
+def chat(request):
+    if request.method == "POST":
+        question = request.POST.get("question", "").strip()
+        if question:
+            ask_and_save(request.user, question)
+        return redirect("chat")
+
+    messages_list = ChatMessage.objects.filter(user=request.user).order_by("created_at")
+    return render(request, "chat.html", {"chat_messages": messages_list})
 
 
 # --- DRF API (Phase 2, for the React frontend) -----------------------------

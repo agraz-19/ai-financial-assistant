@@ -13,4 +13,5 @@ urlpatterns = [
     path("upload/", views.upload_statement, name="upload_statement"),
     path("api/summary/", views.SummaryView.as_view(), name="api-summary"),
     path("api/", include(router.urls)),
+    path("chat/", views.chat, name="chat"),
 ]

@@ -9,6 +9,7 @@ db.sqlite3
 finance_backend/media/*
 !finance_backend/media/.gitkeep
 finance_backend/staticfiles/
+finance_backend/chroma_data/
 
 # Frontend
 frontend/node_modules/

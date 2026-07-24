@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-4 bg-white rounded-4 shadow-sm border" style="max-width: 700px; margin: 0 auto;">
+  <h1 class="h3 mb-4">Ask about your spending</h1>
+
+  <div class="mb-4" style="max-height: 400px; overflow-y: auto;">
+    {% for msg in chat_messages %}
+      <div class="mb-3">
+        <strong>{% if msg.role == "USER" %}You{% else %}Assistant{% endif %}:</strong>
+        <p class="mb-0">{{ msg.content }}</p>
+      </div>
+    {% empty %}
+      <p class="text-muted">Ask a question like "How much did I spend on food this month?"</p>
+    {% endfor %}
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="input-group">
+      <input type="text" name="question" class="form-control" placeholder="Ask a question..." required autofocus>
+      <button type="submit" class="btn btn-dark">Ask</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
