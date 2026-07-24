@@ -1,7 +1,9 @@
 import hashlib
+from io import BytesIO
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.generic import TemplateView
@@ -57,30 +59,47 @@ def upload_statement(request):
         file_hash = hashlib.sha256(file_bytes).hexdigest()
         file_obj.seek(0)
 
-        if Statement.objects.filter(user=request.user, file_hash=file_hash).exists():
-            messages.warning(request, "This exact file has already been uploaded.")
-            return redirect("upload_statement")
-
         file_type = (
             Statement.FileType.CSV
             if file_obj.name.lower().endswith(".csv")
             else Statement.FileType.PDF
         )
 
-        statement = Statement.objects.create(
-            user=request.user,
-            file=file_obj,
-            file_hash=file_hash,
-            file_type=file_type,
-        )
-
         if file_type == Statement.FileType.CSV:
             try:
-                parsed, warnings = parse_csv_statement(statement.file)
-                count = save_transactions(statement, parsed)
-                statement.status = Statement.Status.COMPLETED
-                statement.save()
-                messages.success(request, f"Uploaded {count} transactions.")
+                parsed, warnings = parse_csv_statement(BytesIO(file_bytes))
+                with transaction.atomic():
+                    statement, created = Statement.objects.get_or_create(
+                        user=request.user,
+                        file_hash=file_hash,
+                        defaults={
+                            "file": file_obj,
+                            "file_type": file_type,
+                            "status": Statement.Status.PROCESSING,
+                        },
+                    )
+
+                    if created:
+                        statement.file = file_obj
+                    else:
+                        statement.transactions.all().delete()
+                        statement.file = file_obj
+                        statement.file_type = file_type
+                        statement.status = Statement.Status.PROCESSING
+                        statement.error_message = None
+                        statement.processed_at = None
+
+                    statement.save()
+
+                    count = save_transactions(statement, parsed)
+                    statement.status = Statement.Status.COMPLETED
+                    statement.save(update_fields=["status"])
+
+                if created:
+                    messages.success(request, "Uploaded a new statement.")
+                else:
+                    messages.info(request, "Reprocessed the existing statement and replaced its transactions.")
+                messages.success(request, f"Saved {count} transactions.")
                 for w in warnings:
                     messages.warning(request, w)
 
@@ -98,9 +117,6 @@ def upload_statement(request):
                     messages.warning(request, f"Categorization failed: {e}")
 
             except CSVParseError as e:
-                statement.status = Statement.Status.FAILED
-                statement.error_message = str(e)
-                statement.save()
                 messages.error(request, f"Parsing failed: {e}")
         else:
             messages.info(request, "PDF parsing not wired up yet.")

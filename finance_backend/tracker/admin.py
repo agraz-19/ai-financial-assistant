@@ -19,9 +19,13 @@ class StatementAdmin(admin.ModelAdmin):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display = ("date", "user", "amount", "category", "is_ai_categorized")
+    list_display = ("date", "user", "short_description", "amount", "category", "is_ai_categorized")
     search_fields = ("description", "user__username")
     list_filter = ("category", "is_ai_categorized", "date")
+    
+    @admin.display(description="Description / Payee-Payer")
+    def short_description(self, obj):
+        return obj.description[:60] + ("…" if len(obj.description) > 60 else "")
     actions = ["report_exact_duplicate_transactions"]
 
     @admin.action(description="Report exact duplicate transactions")

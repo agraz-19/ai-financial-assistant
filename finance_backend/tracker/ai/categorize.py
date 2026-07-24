@@ -19,11 +19,13 @@ client = OpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
 )
 
-# Any OpenRouter ":free" model works here. Llama 3.3 70B is a solid,
-# reliable default for structured/classification tasks like this one.
-# Swap this string if you want to try a different free model --
-# see https://openrouter.ai/models?max_price=0 for the current list.
-MODEL_NAME = "meta-llama/llama-3.3-70b-instruct:free"
+# OpenRouter's free-model lineup rotates frequently (providers add/remove
+# free capacity without much notice), so instead of hardcoding a specific
+# model ID that can 404 overnight, use their auto-router: it picks among
+# whatever free models are currently active. If you want a fixed model
+# instead, check https://openrouter.ai/models?max_price=0 for what's live
+# right now and swap this string.
+MODEL_NAME = "openrouter/free"
 
 
 @dataclass(frozen=True)
@@ -33,10 +35,10 @@ class HeuristicRule:
 
 
 HEURISTIC_RULES: tuple[HeuristicRule, ...] = (
-    HeuristicRule("Groceries", ("grocery", "groceries", "supermarket", "mart", "kirana", "dmart", "bigbasket", "blinkit", "instamart", "zepto")),
-    HeuristicRule("Dining", ("restaurant", "cafe", "dining", "swiggy", "zomato", "food", "pizza", "burger", "hotel", "eatery")),
-    HeuristicRule("Transport", ("uber", "ola", "metro", "bus", "taxi", "rapido", "fuel", "petrol", "diesel", "parking", "toll")),
-    HeuristicRule("Bills & Subscriptions", ("electricity", "water bill", "bill", "subscription", "netflix", "prime", "hotstar", "spotify", "recharge", "broadband", "wifi", "mobile", "phonepe recharge")),
+    HeuristicRule("Groceries", ("grocery", "groceries", "supermarket", "mart", "kirana", "dmart", "bigbasket", "blinkit", "instamart", "zepto", "fruit", "fruits", "vegetable", "vegetables", "veggies", "sabzi", "bhaji", "dairy", "milk", "provision", "farm fresh", "general store", "onion", "vegetable shop")),
+    HeuristicRule("Dining", ("restaurant", "cafe", "dining", "swiggy", "zomato", "food", "pizza", "burger", "hotel", "eatery", "bakery", "sweets", "juice", "chaat", "tiffin", "meat", "chicken", "chiken", "mutton", "fish", "egg", "mcdonald", "kfc", "dominos", "subway", "tea", "chai", "icecream", "ice cream", "snacks", "mithai", "bhandar", "sweet")),
+    HeuristicRule("Transport", ("uber", "ola", "metro", "bus", "taxi", "rapido", "fuel", "petrol", "diesel", "parking", "toll", "pump", "bpcl", "hpcl", "iocl", "indane", "service station", "motors", "auto service", "garage")),
+    HeuristicRule("Bills & Subscriptions", ("electricity", "water bill", "bill", "subscription", "netflix", "prime", "hotstar", "spotify", "recharge", "broadband", "wifi", "mobile", "phonepe recharge", "apple", "linkedin", "google play", "app store", "icloud")),
     HeuristicRule("Shopping", ("amazon", "flipkart", "myntra", "ajio", "shopping", "mall", "store", "lifestyle", "pantaloons")),
     HeuristicRule("Health", ("pharmacy", "medical", "hospital", "clinic", "apollo", "medicine", "diagnostic", "lab")),
     HeuristicRule("Rent", ("rent", "housing", "lease", "landlord", "pg rent", "hostel")),
@@ -56,8 +58,40 @@ def _build_category_lookup(category_names: list[str]) -> dict[str, str]:
     return lookup
 
 
+# Words that indicate a payee is a business, not an individual -- used to
+# tell "Paid to Ramesh Kumar" (a person, likely a P2P transfer) apart from
+# "Paid to Ramesh Traders" (a business we just don't have a keyword for yet).
+BUSINESS_INDICATOR_WORDS = (
+    "shop", "store", "mart", "house", "motors", "pump", "station", "services",
+    "service", "ltd", "pvt", "private", "limited", "bhandar", "restaurant",
+    "hotel", "works", "enterprises", "agencies", "traders", "industries",
+    "company", "corp", "association", "centre", "center", "cafe", "bakery",
+    "lounge", "clinic", "hospital", "pharmacy", "electronics", "textiles",
+    "communications", "solutions", "technologies", "systems", "studio",
+)
+
+
+def _looks_like_personal_name(text: str) -> bool:
+    """
+    Heuristic: if the payee text has no digits and no business-indicator
+    words, it's very likely a plain individual's name (e.g. "Mohammad
+    Ghouseuddin", "Vijay Kumar") rather than a business -- a strong signal
+    this is a person-to-person transfer.
+    """
+    if any(ch.isdigit() for ch in text):
+        return False
+    words = set(text.split())
+    if words & set(BUSINESS_INDICATOR_WORDS):  # whole-word match, not substring --
+        return False                            # avoids false hits like "house" inside "ghouseuddin"
+    word_count = len(words)
+    return 1 <= word_count <= 5
+
+
 def _heuristic_category(description: str, category_names: list[str]) -> tuple[str | None, float]:
     text = _normalize(description)
+    # Strip common PhonePe/UPI prefixes so name-detection isn't thrown off by them
+    payee_text = re.sub(r"^(paid to|received from|sent to)\s+", "", text).strip()
+
     category_lookup = _build_category_lookup(category_names)
 
     # Direct keyword hit against the category names first.
@@ -77,14 +111,31 @@ def _heuristic_category(description: str, category_names: list[str]) -> tuple[st
         if "Transfers" in category_names:
             return "Transfers", 0.7
 
+    # No business keyword matched -- if the remaining payee text looks like
+    # a plain person's name, treat it as a P2P transfer.
+    if "Transfers" in category_names and _looks_like_personal_name(payee_text):
+        return "Transfers", 0.6
+
     return None, 0.0
 
-CATEGORIZATION_PROMPT = """You are categorizing personal bank transactions.
+
+CATEGORIZATION_PROMPT = """You are categorizing personal bank/UPI transactions.
 
 Available categories: {categories}
 
 For each transaction below, choose the single most appropriate category from
-the list above. If none fit well, use "Other".
+the list above. Many transactions are UPI payments to small local vendors
+(e.g. "Kamble Fruits", "Sharma Vegetables", "New Bakery") -- use your knowledge
+of what that business name implies (a fruit seller, a bakery, a grocer, etc.)
+to infer the right category, not just literal keyword matching. For example,
+"Kamble Fruits" is a fruit vendor and should be categorized as "Groceries".
+
+If the payee is clearly just an individual person's name with no business
+indicator (e.g. "Mohammad Ghouseuddin", "Vijay Kumar", "Santosh Kumar") and
+there is no other context, this is almost certainly a person-to-person
+payment -- categorize it as "Transfers", not "Other".
+
+Only use "Other" if the description gives no reasonable clue at all.
 
 Respond ONLY with a JSON array, no markdown fences, no extra text, in this
 exact shape, in the same order as given:
@@ -177,17 +228,24 @@ def categorize_transactions(transactions: list, category_names: list[str]) -> li
         print(f"[categorize] Unexpected JSON shape: {type(parsed)}")
         results = []
 
+    # Case-insensitive lookup so "groceries" from the AI still matches your
+    # "Groceries" category instead of being silently discarded as None.
+    category_names_lower = {name.strip().lower(): name for name in category_names}
+
     results_by_index = {}
     for r in results:
         if not isinstance(r, dict) or "index" not in r:
             continue
-        category = r.get("category")
+        raw_category = (r.get("category") or "").strip()
+        matched_category = category_names_lower.get(raw_category.lower())
         confidence = r.get("confidence", 0.0)
         results_by_index[r["index"]] = {
             "index": r["index"],
-            "category": category if category in category_names else None,
+            "category": matched_category,
             "confidence": confidence,
         }
+        if raw_category and matched_category is None:
+            print(f"[categorize] AI returned unrecognized category '{raw_category}' -- will fall back.")
 
     return [
         results_by_index.get(
