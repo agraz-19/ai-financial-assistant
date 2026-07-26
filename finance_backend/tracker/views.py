@@ -17,6 +17,7 @@ from .parsers.csv_parser import CSVParseError, parse_csv_statement, save_transac
 from .services.insights import build_dashboard_context, generate_monthly_insight
 from .serializers import CategorySerializer, StatementSerializer, TransactionSerializer
 from .ai.embeddings import embed_transactions_for_statement
+from .services.insights import refresh_after_new_data
 
 
 # --- Template views (Phase 1) ---------------------------------------------
@@ -112,6 +113,7 @@ def upload_statement(request):
                     embedded_count = embed_transactions_for_statement(statement)
                     if embedded_count:
                         messages.success(request, f"Embedded {embedded_count} transactions for search.")
+                    refresh_after_new_data(request.user)
                     try:
                         generate_monthly_insight(request.user)
                     except Exception as insight_error:

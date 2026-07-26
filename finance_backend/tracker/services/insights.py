@@ -5,6 +5,7 @@ import os
 from decimal import Decimal
 
 import pandas as pd
+from django.core.cache import cache
 from django.db.models import QuerySet
 from django.utils import timezone
 from openai import OpenAI
@@ -14,6 +15,8 @@ from tracker.models import MonthlyInsight, Transaction
 
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "gpt-4o-mini")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+DASHBOARD_CACHE_TTL = 60 * 15  # 15 minutes
 
 
 def _money(value: float | Decimal | int) -> str:
@@ -186,7 +189,39 @@ def _parse_budget_payload(payload: str) -> tuple[str, list[str]]:
     return lines[0], lines[1:]
 
 
-def build_dashboard_context(user) -> dict:
+def _dashboard_cache_key(user, month_start) -> str:
+    return f"dashboard:{user.id}:{month_start.isoformat()}"
+
+
+def invalidate_dashboard_cache(user) -> None:
+    """
+    Call this whenever a user's transaction data changes (new upload,
+    categorization, manual edit, etc.) so the cached dashboard doesn't show
+    stale numbers. Only clears the current month's cache -- that's the only
+    one build_dashboard_context ever reads.
+
+    NOTE: this alone does NOT refresh the AI-written narrative text in
+    MonthlyInsight (that's cached separately in Postgres, once per month,
+    to avoid re-billing the AI on every page load). If you want the AI
+    narrative to reflect newly uploaded transactions too, call
+    generate_monthly_insight(user) as well -- see refresh_after_new_data().
+    """
+    month_start = timezone.localdate().replace(day=1)
+    cache.delete(_dashboard_cache_key(user, month_start))
+
+
+def refresh_after_new_data(user) -> None:
+    """
+    Call this after a new statement is uploaded and categorized. Clears the
+    Redis cache AND regenerates the AI narrative (MonthlyInsight) so both
+    the numbers and the written summary reflect the newly uploaded data on
+    the next dashboard load -- not just the numbers.
+    """
+    generate_monthly_insight(user)  # overwrites this month's MonthlyInsight with fresh AI text
+    invalidate_dashboard_cache(user)
+
+
+def _build_dashboard_context_uncached(user) -> dict:
     month_start = timezone.localdate().replace(day=1)
     transactions = (
         Transaction.objects.filter(
@@ -238,3 +273,21 @@ def build_dashboard_context(user) -> dict:
         "recent_transactions": recent_transactions,
         "show_upload_prompt": transactions.count() == 0,
     }
+
+
+def build_dashboard_context(user) -> dict:
+    """
+    Cached wrapper around _build_dashboard_context_uncached(). Checks Redis
+    first; only recomputes (DB queries + pandas aggregation, and possibly an
+    AI call if no MonthlyInsight exists yet) on a cache miss.
+    """
+    month_start = timezone.localdate().replace(day=1)
+    cache_key = _dashboard_cache_key(user, month_start)
+
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    context = _build_dashboard_context_uncached(user)
+    cache.set(cache_key, context, timeout=DASHBOARD_CACHE_TTL)
+    return context

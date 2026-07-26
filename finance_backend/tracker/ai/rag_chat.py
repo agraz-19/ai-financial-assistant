@@ -24,9 +24,9 @@ MODEL_NAME = "openrouter/free"  # auto-router -- see categorize.py for why
 
 RAG_PROMPT = """You are a helpful personal finance assistant. Answer the
 user's question using ONLY the transaction data provided below. Be specific
-with numbers (use ₹ for amounts). If the provided transactions don't contain
-enough information to answer confidently, say so honestly rather than
-guessing.
+with numbers (use ₹ for amounts). Do not use Markdown formatting like
+asterisks or bullet points -- respond in plain conversational sentences.
+
 
 Relevant transactions:
 {context}
