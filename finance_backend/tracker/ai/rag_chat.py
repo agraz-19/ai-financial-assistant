@@ -1,12 +1,10 @@
 """
 RAG (Retrieval-Augmented Generation) chat over a user's own transactions.
 
-Flow:
-  user question -> embed question -> retrieve top-k similar transactions
-  from ChromaDB (scoped to this user) -> build a prompt with those
-  transactions as context -> send to the LLM -> return a grounded answer
-
-Uses OpenRouter via the OpenAI SDK, same as categorize.py.
+Scoped to the user's MOST RECENTLY UPLOADED statement only -- consistent
+with how the dashboard works (tracker.services.insights.get_latest_statement).
+This prevents old/test/fake uploads from mixing into answers about the
+user's current, real data.
 """
 
 import os
@@ -20,13 +18,14 @@ client = OpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
 )
 
-MODEL_NAME = "openrouter/free"  # auto-router -- see categorize.py for why
+MODEL_NAME = "openrouter/free"
 
 RAG_PROMPT = """You are a helpful personal finance assistant. Answer the
 user's question using ONLY the transaction data provided below. Be specific
 with numbers (use ₹ for amounts). Do not use Markdown formatting like
 asterisks or bullet points -- respond in plain conversational sentences.
-
+If the provided transactions don't contain enough information to answer
+confidently, say so honestly rather than guessing.
 
 Relevant transactions:
 {context}
@@ -52,16 +51,21 @@ def _format_transactions_for_prompt(transactions: list[dict]) -> str:
 
 def answer_question(user, question: str, top_k: int = 8) -> dict:
     """
-    Runs the full RAG pipeline for a single question.
-
-    Returns a dict:
-        {"answer": str, "sources": list[dict], "error": str | None}
-
-    `sources` is the list of transactions that were retrieved and used as
-    context, useful if you want to show "based on these transactions" in the UI.
+    Runs the full RAG pipeline for a single question, scoped to the user's
+    latest uploaded statement.
     """
+    from tracker.services.insights import get_latest_statement
+
+    statement = get_latest_statement(user)
+    if statement is None:
+        return {
+            "answer": "You haven't uploaded any statements yet -- upload one first, then ask me about it.",
+            "sources": [],
+            "error": None,
+        }
+
     try:
-        retrieved = query_similar_transactions(user, question, top_k=top_k)
+        retrieved = query_similar_transactions(user, statement, question, top_k=top_k)
     except Exception as e:
         print(f"[rag_chat] Retrieval failed: {e!r}")
         return {
@@ -80,7 +84,7 @@ def answer_question(user, question: str, top_k: int = 8) -> dict:
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,  # a little higher than categorization -- this is conversational, not classification
+            temperature=0.3,
         )
         answer = response.choices[0].message.content.strip()
     except Exception as e:
@@ -95,10 +99,6 @@ def answer_question(user, question: str, top_k: int = 8) -> dict:
 
 
 def ask_and_save(user, question: str, top_k: int = 8):
-    """
-    Runs answer_question() and persists both sides of the conversation as
-    ChatMessage rows. Returns the same dict as answer_question().
-    """
     from tracker.models import ChatMessage
 
     ChatMessage.objects.create(user=user, role=ChatMessage.Role.USER, content=question)

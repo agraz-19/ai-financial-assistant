@@ -1,21 +1,74 @@
+# This file defines the three containers your app needs and how they connect.
+# Run `docker-compose up` from THIS folder (the repo root) to start everything.
+
 services:
-  backend:
-    build:
-      context: ./finance_backend
+
+  # --- PostgreSQL ---
+  db:
+    image: postgres:16-alpine   # official Postgres image, "alpine" = smaller Linux base
+    environment:
+      # These create the database + user the FIRST time this container's
+      # volume is empty. Must match what settings.py expects (see .env below).
+      POSTGRES_DB: upi_finance
+      POSTGRES_USER: upi_user
+      POSTGRES_PASSWORD: upi_password
+    volumes:
+      # Named volume: Postgres's actual data files live here, OUTSIDE the
+      # container's disposable filesystem. Delete/recreate the container
+      # as many times as you want -- this data survives.
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Docker Compose can literally ask Postgres "are you ready yet?"
+      # instead of guessing with a fixed wait time.
+      test: ["CMD-SHELL", "pg_isready -U upi_user -d upi_finance"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Redis ---
+  redis:
+    image: redis:7-alpine
+    # No volume needed here -- your cache is fine being wiped on restart,
+    # that's literally what a cache is for (temporary, regenerable data).
+
+  # --- Your Django app ---
+  web:
+    build: ./finance_backend   # tells Compose "build the Dockerfile inside this folder"
     command: python manage.py runserver 0.0.0.0:8000
-    env_file:
-      - ./finance_backend/.env
-    ports:
-      - "8000:8000"
     volumes:
+      # Mount your actual code folder into the container. This means edits
+      # you make in VS Code show up inside the running container immediately
+      # (with runserver's auto-reload), instead of needing a rebuild every
+      # time you change a line of Python.
       - ./finance_backend:/app
-
-  frontend:
-    image: node:20-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+      # A SEPARATE named volume just for your ChromaDB embeddings, so they
+      # persist across container restarts too (same reasoning as postgres_data).
+      - chroma_data:/app/chroma_data
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
+      # "host_port:container_port" -- lets you open 127.0.0.1:8000 on your
+      # actual Windows browser and have it forwarded into the container.
+      - "8000:8000"
+    env_file:
+      # All your secrets/config (API keys, DB credentials) come from here --
+      # never hardcoded in this file, which IS safe to commit to git.
+      - ./finance_backend/.env
+    environment:
+      # These override/set the DB and Redis connection info specifically for
+      # the Docker environment -- see the "why localhost is wrong" explanation.
+      # Host values here are the SERVICE NAMES above (db, redis), not localhost.
+      DB_ENGINE: postgres
+      DB_HOST: db
+      DB_NAME: upi_finance
+      DB_USER: upi_user
+      DB_PASSWORD: upi_password
+      DB_PORT: 5432
+      REDIS_URL: redis://redis:6379/1
+    depends_on:
+      db:
+        condition: service_healthy   # wait for Postgres's healthcheck to pass, not just "started"
+      redis:
+        condition: service_started
 
+volumes:
+  postgres_data:
+  chroma_data:

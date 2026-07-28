@@ -5,16 +5,14 @@ Uses sentence-transformers (runs fully locally, no API key, no rate limits)
 to generate embeddings, and a persistent ChromaDB collection to store and
 search them.
 
-Design decisions (see project discussion):
-- We embed DESCRIPTION + CATEGORY only, not amount. Embeddings capture
-  semantic/textual meaning; numbers like "500" don't carry meaningful
-  numeric relationships when embedded as text. Amount and date are stored
-  as metadata instead, so they're still retrievable, just not used to
-  influence which transactions get matched.
-- Every transaction is namespaced by user_id in its metadata, and every
-  query MUST filter by user_id. Without this, one user's RAG chat could
-  surface another user's financial data -- a serious privacy bug, not a
-  minor one.
+Design decisions:
+- We embed DESCRIPTION + CATEGORY only, not amount (see build_embedding_text).
+- Every transaction is namespaced by BOTH user_id and statement_id in its
+  metadata. Queries filter by both -- not just user_id -- so retrieval is
+  scoped to one specific uploaded statement, consistent with how the
+  dashboard works (build_dashboard_context / get_latest_statement). Without
+  the statement_id filter, chat answers could mix data from unrelated
+  uploads (e.g. test/fake data mixing with real data).
 """
 
 import threading
@@ -23,14 +21,12 @@ import chromadb
 from django.conf import settings
 from sentence_transformers import SentenceTransformer
 
-# Lazy-loaded singletons -- the embedding model and Chroma client are
-# expensive to initialize, so we only do it once per process, not per request.
 _model = None
 _model_lock = threading.Lock()
 _chroma_client = None
 _collection = None
 
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"  # small, fast, well-established default
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 COLLECTION_NAME = "transactions"
 
 
@@ -38,16 +34,12 @@ def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         with _model_lock:
-            if _model is None:  # re-check inside the lock (double-checked locking)
+            if _model is None:
                 _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
     return _model
 
 
 def _get_collection():
-    """
-    Returns a persistent ChromaDB collection, creating the underlying
-    on-disk store under BASE_DIR/chroma_data if it doesn't exist yet.
-    """
     global _chroma_client, _collection
     if _collection is None:
         persist_dir = str(settings.BASE_DIR / "chroma_data")
@@ -57,10 +49,6 @@ def _get_collection():
 
 
 def build_embedding_text(transaction) -> str:
-    """
-    The exact text that gets embedded for a transaction. Deliberately
-    excludes amount -- see module docstring.
-    """
     category_name = transaction.category.name if transaction.category else "Uncategorized"
     return f"{transaction.description} - {category_name}"
 
@@ -68,15 +56,8 @@ def build_embedding_text(transaction) -> str:
 def embed_and_store_transactions(transactions: list) -> int:
     """
     Embeds a batch of Transaction instances and upserts them into ChromaDB.
-
-    Uses upsert (not add) so re-running this on already-embedded transactions
-    is safe and idempotent -- it just overwrites the existing entry rather
-    than erroring or creating a duplicate.
-
-    Only pass transactions that already have a category set -- category is
-    part of what gets embedded, so this should run after categorization.
-
-    Returns the number of transactions embedded.
+    Each entry's metadata includes both user_id AND statement_id, so
+    retrieval can be scoped to a single upload.
     """
     transactions = [t for t in transactions if t.category is not None]
     if not transactions:
@@ -92,6 +73,7 @@ def embed_and_store_transactions(transactions: list) -> int:
     metadatas = [
         {
             "user_id": t.user_id,
+            "statement_id": t.statement_id,
             "transaction_id": t.id,
             "amount": float(t.amount),
             "date": str(t.date),
@@ -111,26 +93,19 @@ def embed_and_store_transactions(transactions: list) -> int:
 
 
 def embed_transactions_for_statement(statement) -> int:
-    """
-    Convenience wrapper: embeds all categorized transactions belonging to
-    a given Statement. Call this after run_categorization_for_statement()
-    has finished, so categories are already assigned.
-    """
     transactions = list(statement.transactions.filter(category__isnull=False))
     return embed_and_store_transactions(transactions)
 
 
-def query_similar_transactions(user, query_text: str, top_k: int = 5) -> list[dict]:
+def query_similar_transactions(user, statement, query_text: str, top_k: int = 5) -> list[dict]:
     """
     Embeds a natural-language question and returns the top_k most similar
-    transactions belonging to the given user.
+    transactions belonging to the given user AND the given statement.
 
-    Returns a list of dicts:
-        [{"description": str, "amount": float, "date": str, "category": str,
-          "transaction_id": int, "distance": float}, ...]
-    sorted by relevance (lowest distance = most similar).
-
-    ALWAYS filters by user_id -- never remove the `where` clause below.
+    `statement` is required (not optional) -- retrieval is always scoped to
+    one specific upload, matching how the dashboard behaves. Pass in
+    tracker.services.insights.get_latest_statement(user) if you want "the
+    most recently uploaded statement," which is the current app-wide default.
     """
     model = _get_model()
     collection = _get_collection()
@@ -140,7 +115,12 @@ def query_similar_transactions(user, query_text: str, top_k: int = 5) -> list[di
     results = collection.query(
         query_embeddings=query_embedding,
         n_results=top_k,
-        where={"user_id": user.id},  # critical: never search across users
+        where={
+            "$and": [
+                {"user_id": user.id},
+                {"statement_id": statement.id},
+            ]
+        },
     )
 
     documents = results.get("documents", [[]])[0]

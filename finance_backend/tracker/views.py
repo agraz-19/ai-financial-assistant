@@ -2,6 +2,7 @@ import hashlib
 from io import BytesIO
 
 from django.contrib import messages
+from django.contrib import messages as django_messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
@@ -14,7 +15,7 @@ from .ai.categorize import run_categorization_for_statement
 from .ai.rag_chat import ask_and_save
 from .models import Category, Statement, Transaction, ChatMessage
 from .parsers.csv_parser import CSVParseError, parse_csv_statement, save_transactions
-from .services.insights import build_dashboard_context, generate_monthly_insight
+from .services.insights import build_dashboard_context
 from .serializers import CategorySerializer, StatementSerializer, TransactionSerializer
 from .ai.embeddings import embed_transactions_for_statement
 from .services.insights import refresh_after_new_data
@@ -27,6 +28,8 @@ class HomeView(TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context["hide_messages"] = True
+        list(django_messages.get_messages(self.request))  # consume pending messages so they don't reappear on another page later
         if self.request.user.is_authenticated:
             context.update(build_dashboard_context(self.request.user))
         else:
@@ -96,7 +99,8 @@ def upload_statement(request):
 
                     count = save_transactions(statement, parsed)
                     statement.status = Statement.Status.COMPLETED
-                    statement.save(update_fields=["status"])
+                    statement.processed_at = timezone.now()
+                    statement.save(update_fields=["status", "processed_at"])
 
                 if created:
                     messages.success(request, "Uploaded a new statement.")
@@ -110,18 +114,21 @@ def upload_statement(request):
                     categorized_count = run_categorization_for_statement(statement)
                     if categorized_count:
                         messages.success(request, f"AI categorized {categorized_count} transactions.")
+                except Exception as e:
+                    # Transactions are already saved, so keep the upload successful.
+                    messages.warning(request, f"Categorization failed: {e}")
+
+                try:
                     embedded_count = embed_transactions_for_statement(statement)
                     if embedded_count:
                         messages.success(request, f"Embedded {embedded_count} transactions for search.")
-                    refresh_after_new_data(request.user)
-                    try:
-                        generate_monthly_insight(request.user)
-                    except Exception as insight_error:
-                        messages.warning(request, f"Insight generation skipped: {insight_error}")
-                except Exception as e:
-                    # don't fail the whole upload if categorization has an issue --
-                    # the transactions are already saved, categorization can be retried later
-                    messages.warning(request, f"Categorization failed: {e}")
+                except Exception as embedding_error:
+                    messages.warning(request, f"Embedding skipped: {embedding_error}")
+
+                try:
+                    refresh_after_new_data(request.user, statement)
+                except Exception as insight_error:
+                    messages.warning(request, f"Dashboard insight refresh skipped: {insight_error}")
 
             except CSVParseError as e:
                 messages.error(request, f"Parsing failed: {e}")

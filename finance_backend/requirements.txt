@@ -8,3 +8,4 @@ openai
 chromadb 
 sentence-transformers
 django-redis
+psycopg2-binary

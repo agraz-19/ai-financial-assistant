@@ -87,25 +87,31 @@ class Transaction(models.Model):
 
 
 class MonthlyInsight(models.Model):
-    """
-    Cached AI-generated monthly summary (this is what gets Redis-cached too,
-    but storing it in Postgres means it persists even if the cache is cleared).
-    """
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="insights")
-    month = models.DateField()  # store as the 1st of the month, e.g. 2026-07-01
-    summary_text = models.TextField()  # the AI-generated narrative summary
+    month = models.DateField()  # kept for display purposes (e.g. "which month this data is from")
+ 
+    # NEW: ties this insight to one specific uploaded statement, so insights
+    # are scoped per-upload instead of aggregated across everything a user
+    # has ever uploaded.
+    statement = models.ForeignKey(
+        "Statement", on_delete=models.CASCADE, related_name="insights",
+        null=True, blank=True,  # null=True so existing old rows (if any) don't break
+    )
+ 
+    summary_text = models.TextField()
     total_spent = models.DecimalField(max_digits=12, decimal_places=2)
     total_income = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     budget_recommendation = models.TextField(blank=True, null=True)
     generated_at = models.DateTimeField(auto_now_add=True)
-
+ 
     class Meta:
-        unique_together = ("user", "month")
+        # CHANGED: was unique_together = ("user", "month")
+        # Now scoped per statement instead of per calendar month.
+        unique_together = ("user", "statement")
         ordering = ["-month"]
-
+ 
     def __str__(self):
         return f"{self.user.username} - {self.month.strftime('%B %Y')}"
-
 
 class ChatMessage(models.Model):
     """

@@ -9,9 +9,10 @@ from django.core.cache import cache
 from django.db.models import QuerySet
 from django.utils import timezone
 from openai import OpenAI
+from django.db.models import F
 
 from tracker.ai.prompts import INSIGHTS_PROMPT, INSIGHTS_SYSTEM_PROMPT
-from tracker.models import MonthlyInsight, Transaction
+from tracker.models import MonthlyInsight, Statement, Transaction
 
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "gpt-4o-mini")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -21,6 +22,21 @@ DASHBOARD_CACHE_TTL = 60 * 15  # 15 minutes
 
 def _money(value: float | Decimal | int) -> str:
     return f"Rs. {float(value):,.2f}"
+
+
+def get_latest_statement(user) -> Statement | None:
+    """
+    The single source of truth for 'which upload is currently active'.
+    Sorts by processed_at (when the data was actually last (re)processed),
+    not uploaded_at (which never changes once a Statement row is first
+    created -- so re-uploading/reprocessing the same file wouldn't make it
+    "latest" again if sorted by uploaded_at alone).
+    """
+    return (
+        Statement.objects.filter(user=user)
+        .order_by(F("processed_at").desc(nulls_last=True), "-uploaded_at")
+        .first()
+    )
 
 
 def _build_dataframe(transactions: QuerySet[Transaction]) -> pd.DataFrame:
@@ -54,7 +70,7 @@ def build_monthly_financial_summary(transactions: QuerySet[Transaction]) -> dict
             "savings": 0.0,
             "highest_expense_category": "None",
             "spending_per_category": [],
-            "summary_text": "No transactions found for this month.",
+            "summary_text": "No transactions found.",
         }
 
     expense_frame = frame[frame["amount"] < 0].copy()
@@ -108,11 +124,11 @@ def _fallback_ai_response(summary: dict) -> dict:
 
     return {
         "spending_summary": (
-            f"You spent {_money(summary['total_spending'])} this month. "
+            f"You spent {_money(summary['total_spending'])} in this statement. "
             f"Your highest expense category was {summary['highest_expense_category']}."
         ),
         "budget_advice": (
-            f"Monthly income was {_money(summary['monthly_income'])} and savings were {_money(summary['savings'])}. "
+            f"Income was {_money(summary['monthly_income'])} and savings were {_money(summary['savings'])}. "
             "Try to keep at least 20% of income aside if possible."
         ),
         "recommendations": recommendations[:3],
@@ -152,21 +168,25 @@ def generate_ai_insights(summary: dict) -> dict:
         return _fallback_ai_response(summary)
 
 
-def generate_monthly_insight(user) -> dict:
-    month_start = timezone.localdate().replace(day=1)
-    transactions = Transaction.objects.filter(
-        user=user,
-        date__year=month_start.year,
-        date__month=month_start.month,
-    )
-
+def generate_insight_for_statement(user, statement: Statement) -> dict:
+    """
+    Generates (or regenerates) the AI narrative for ONE specific statement's
+    transactions -- not a calendar month, not all of a user's data.
+    """
+    transactions = statement.transactions.all()
     summary = build_monthly_financial_summary(transactions)
     ai_output = generate_ai_insights(summary)
 
+    # `month` is still populated (model requires it) -- derived from the
+    # statement's own data, purely for display, not used for scoping anymore.
+    first_txn = transactions.order_by("date").first()
+    month_value = first_txn.date.replace(day=1) if first_txn else timezone.localdate().replace(day=1)
+
     insight, _ = MonthlyInsight.objects.update_or_create(
         user=user,
-        month=month_start,
+        statement=statement,
         defaults={
+            "month": month_value,
             "summary_text": ai_output["spending_summary"],
             "total_spent": summary["total_spending"],
             "total_income": summary["monthly_income"],
@@ -189,55 +209,51 @@ def _parse_budget_payload(payload: str) -> tuple[str, list[str]]:
     return lines[0], lines[1:]
 
 
-def _dashboard_cache_key(user, month_start) -> str:
-    return f"dashboard:{user.id}:{month_start.isoformat()}"
-
-
-def invalidate_dashboard_cache(user) -> None:
+def refresh_after_new_data(user, statement: Statement) -> None:
     """
-    Call this whenever a user's transaction data changes (new upload,
-    categorization, manual edit, etc.) so the cached dashboard doesn't show
-    stale numbers. Only clears the current month's cache -- that's the only
-    one build_dashboard_context ever reads.
-
-    NOTE: this alone does NOT refresh the AI-written narrative text in
-    MonthlyInsight (that's cached separately in Postgres, once per month,
-    to avoid re-billing the AI on every page load). If you want the AI
-    narrative to reflect newly uploaded transactions too, call
-    generate_monthly_insight(user) as well -- see refresh_after_new_data().
+    Call this right after a new statement is uploaded and categorized.
+    Regenerates the AI narrative for THIS statement specifically. Cache
+    invalidation happens automatically -- the cache key includes the
+    statement's id, so a new statement naturally produces a fresh cache key
+    without needing to explicitly clear the old one.
     """
-    month_start = timezone.localdate().replace(day=1)
-    cache.delete(_dashboard_cache_key(user, month_start))
+    generate_insight_for_statement(user, statement)
 
 
-def refresh_after_new_data(user) -> None:
-    """
-    Call this after a new statement is uploaded and categorized. Clears the
-    Redis cache AND regenerates the AI narrative (MonthlyInsight) so both
-    the numbers and the written summary reflect the newly uploaded data on
-    the next dashboard load -- not just the numbers.
-    """
-    generate_monthly_insight(user)  # overwrites this month's MonthlyInsight with fresh AI text
-    invalidate_dashboard_cache(user)
+def _dashboard_cache_key(user, statement: Statement) -> str:
+    return f"dashboard:{user.id}:{statement.id}"
 
 
 def _build_dashboard_context_uncached(user) -> dict:
-    month_start = timezone.localdate().replace(day=1)
+    statement = get_latest_statement(user)
+
+    if statement is None:
+        return {
+            "month_label": "No data yet",
+            "transaction_count": 0,
+            "uncategorized_count": 0,
+            "total_spending": 0.0,
+            "monthly_income": 0.0,
+            "savings": 0.0,
+            "highest_expense_category": "None",
+            "spending_per_category": [],
+            "summary_text": "",
+            "ai_spending_summary": "",
+            "ai_budget_advice": "",
+            "ai_recommendations": [],
+            "recent_transactions": [],
+            "show_upload_prompt": True,
+        }
+
     transactions = (
-        Transaction.objects.filter(
-            user=user,
-            date__year=month_start.year,
-            date__month=month_start.month,
-        )
-        .select_related("category")
-        .order_by("-date", "-id")
+        statement.transactions.select_related("category").order_by("-date", "-id")
     )
 
     summary = build_monthly_financial_summary(transactions)
-    insight = MonthlyInsight.objects.filter(user=user, month=month_start).first()
+    insight = MonthlyInsight.objects.filter(user=user, statement=statement).first()
     ai_output = None
     if insight is None:
-        generated = generate_monthly_insight(user)
+        generated = generate_insight_for_statement(user, statement)
         insight = generated["insight"]
         summary = generated["summary"]
         ai_output = generated["ai_output"]
@@ -257,8 +273,18 @@ def _build_dashboard_context_uncached(user) -> dict:
         ai_budget_advice = ai_output["budget_advice"]
         ai_recommendations = ai_output["recommendations"]
 
+    # Label the dashboard with the actual date range of this statement's
+    # data, and its filename, so it's unambiguous which upload you're viewing.
+    first_date = transactions.order_by("date").first()
+    last_date = transactions.order_by("-date").first()
+    if first_date and last_date:
+        date_range = f"{first_date.date.strftime('%d %b %Y')} - {last_date.date.strftime('%d %b %Y')}"
+    else:
+        date_range = "No transactions"
+
     return {
-        "month_label": month_start.strftime("%B %Y"),
+        "month_label": date_range,
+        "statement_filename": statement.file.name.rsplit("/", 1)[-1],
         "transaction_count": transactions.count(),
         "uncategorized_count": uncategorized_count,
         "total_spending": summary["total_spending"],
@@ -277,13 +303,17 @@ def _build_dashboard_context_uncached(user) -> dict:
 
 def build_dashboard_context(user) -> dict:
     """
-    Cached wrapper around _build_dashboard_context_uncached(). Checks Redis
-    first; only recomputes (DB queries + pandas aggregation, and possibly an
-    AI call if no MonthlyInsight exists yet) on a cache miss.
+    Cached wrapper. Cache key includes the latest statement's id, so
+    uploading a new statement automatically produces a cache miss on the
+    next load -- no manual invalidation needed for the cache itself (though
+    refresh_after_new_data still eagerly regenerates the AI narrative so the
+    very first load after upload is already fresh, not just "eventually").
     """
-    month_start = timezone.localdate().replace(day=1)
-    cache_key = _dashboard_cache_key(user, month_start)
+    statement = get_latest_statement(user)
+    if statement is None:
+        return _build_dashboard_context_uncached(user)
 
+    cache_key = _dashboard_cache_key(user, statement)
     cached = cache.get(cache_key)
     if cached is not None:
         return cached

@@ -10,9 +10,10 @@ results consistent across uploads.
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -26,6 +27,9 @@ client = OpenAI(
 # instead, check https://openrouter.ai/models?max_price=0 for what's live
 # right now and swap this string.
 MODEL_NAME = "openrouter/free"
+
+MAX_RETRIES = 1  # fail fast on rate limits and rely on heuristics instead of long retry chains
+DEFAULT_RETRY_WAIT = 10  # seconds, used if the provider doesn't tell us how long to wait
 
 
 @dataclass(frozen=True)
@@ -144,8 +148,6 @@ exact shape, in the same order as given:
 Transactions:
 {transactions}
 """
-
-
 def categorize_transactions(transactions: list, category_names: list[str]) -> list[dict]:
     """
     transactions: list of Transaction model instances (uncategorized)
@@ -154,13 +156,31 @@ def categorize_transactions(transactions: list, category_names: list[str]) -> li
     Returns a list of dicts: [{"index": int, "category": str, "confidence": float}, ...]
     matching the input order. Falls back to "Other" for any transaction the
     model's response doesn't cover (safety net against malformed AI output).
+
+    IMPORTANT: only transactions the heuristic layer couldn't confidently
+    match are sent to the AI -- not the whole batch. This avoids re-sending
+    already-solved transactions through a slow, rate-limited API call.
     """
     if not transactions:
         return []
 
+    heuristic_results = []
+    for i, txn in enumerate(transactions):
+        category, confidence = _heuristic_category(txn.description, category_names)
+        heuristic_results.append({"index": i, "category": category, "confidence": confidence})
+
+    # Indices the heuristic layer couldn't confidently resolve -- these are
+    # the ONLY ones that need to go to the AI.
+    unmatched_indices = [i for i, r in enumerate(heuristic_results) if not r["category"]]
+
+    if not unmatched_indices:
+        # Every transaction matched a heuristic -- no AI call needed at all.
+        return heuristic_results
+
+    unmatched_transactions = [transactions[i] for i in unmatched_indices]
     txn_lines = "\n".join(
-        f"{i}. {t.description} (amount: {t.amount})"
-        for i, t in enumerate(transactions)
+        f"{position}. {txn.description} (amount: {txn.amount})"
+        for position, txn in enumerate(unmatched_transactions)
     )
 
     prompt = CATEGORIZATION_PROMPT.format(
@@ -168,93 +188,87 @@ def categorize_transactions(transactions: list, category_names: list[str]) -> li
         transactions=txn_lines,
     )
 
-    heuristic_results = []
-    for i, txn in enumerate(transactions):
-        category, confidence = _heuristic_category(txn.description, category_names)
-        heuristic_results.append({"index": i, "category": category, "confidence": confidence})
+    raw = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+            raw = response.choices[0].message.content.strip()
+            break
+        except RateLimitError as e:
+            wait_seconds = DEFAULT_RETRY_WAIT
+            try:
+                wait_seconds = e.response.json()["error"]["metadata"]["retry_after_seconds"]
+            except Exception:
+                pass
 
-    # If every transaction already has a strong heuristic match, don't waste
-    # tokens or risk the API overriding something obvious.
-    if all(result["category"] for result in heuristic_results):
+            if attempt < MAX_RETRIES:
+                print(f"[categorize] Rate limited (attempt {attempt}/{MAX_RETRIES}) -- waiting {wait_seconds:.0f}s before retry.")
+                time.sleep(wait_seconds + 1)
+            else:
+                print(f"[categorize] Rate limited after {MAX_RETRIES} attempts -- falling back to Other for the {len(unmatched_indices)} unresolved transactions.")
+                for i in unmatched_indices:
+                    heuristic_results[i] = {"index": i, "category": "Other", "confidence": 0.0}
+                return heuristic_results
+        except Exception as e:
+            print(f"[categorize] OpenRouter API call failed: {e!r}")
+            for i in unmatched_indices:
+                heuristic_results[i] = {"index": i, "category": "Other", "confidence": 0.0}
+            return heuristic_results
+
+    if raw is None:
+        for i in unmatched_indices:
+            heuristic_results[i] = {"index": i, "category": "Other", "confidence": 0.0}
         return heuristic_results
 
-    raw = None
-    try:
-        if not os.getenv("OPENROUTER_API_KEY"):
-            raise RuntimeError("OPENROUTER_API_KEY is not configured")
-
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
-        raw = response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"[categorize] OpenRouter API call failed: {e!r}")
-        raw = None
-
     # Free models sometimes wrap output in ```json fences despite instructions -- strip if present
-    if raw and raw.startswith("```"):
+    if raw.startswith("```"):
         raw = raw.strip("`")
         if raw.lower().startswith("json"):
             raw = raw[4:].strip()
-
-    if not raw:
-        return [
-            result if result["category"] else {"index": result["index"], "category": "Other", "confidence": 0.0}
-            for result in heuristic_results
-        ]
 
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as e:
         print(f"[categorize] JSON parse failed: {e!r}")
         print(f"[categorize] Raw response was: {raw[:500]}")
-        return [
-            result if result["category"] else {"index": result["index"], "category": "Other", "confidence": 0.0}
-            for result in heuristic_results
-        ]
+        for i in unmatched_indices:
+            heuristic_results[i] = {"index": i, "category": "Other", "confidence": 0.0}
+        return heuristic_results
 
     # Some models wrap the array in an object (e.g. {"results": [...]})
     # despite the prompt asking for a raw array -- unwrap it if so.
     if isinstance(parsed, list):
-        results = parsed
+        ai_results = parsed
     elif isinstance(parsed, dict):
         list_values = [v for v in parsed.values() if isinstance(v, list)]
-        results = list_values[0] if list_values else []
-        if not results:
+        ai_results = list_values[0] if list_values else []
+        if not ai_results:
             print(f"[categorize] Unexpected JSON shape (dict with no list values): {parsed}")
     else:
         print(f"[categorize] Unexpected JSON shape: {type(parsed)}")
-        results = []
+        ai_results = []
 
-    # Case-insensitive lookup so "groceries" from the AI still matches your
-    # "Groceries" category instead of being silently discarded as None.
-    category_names_lower = {name.strip().lower(): name for name in category_names}
+    # ai_results are indexed 0..len(unmatched_transactions)-1 (positions
+    # within the SMALLER unmatched-only prompt), so map them back to the
+    # original transaction indices before merging into heuristic_results.
+    ai_results_by_position = {r["index"]: r for r in ai_results if isinstance(r, dict) and "index" in r}
 
-    results_by_index = {}
-    for r in results:
-        if not isinstance(r, dict) or "index" not in r:
-            continue
-        raw_category = (r.get("category") or "").strip()
-        matched_category = category_names_lower.get(raw_category.lower())
-        confidence = r.get("confidence", 0.0)
-        results_by_index[r["index"]] = {
-            "index": r["index"],
-            "category": matched_category,
-            "confidence": confidence,
-        }
-        if raw_category and matched_category is None:
-            print(f"[categorize] AI returned unrecognized category '{raw_category}' -- will fall back.")
+    for position, original_index in enumerate(unmatched_indices):
+        result = ai_results_by_position.get(position)
+        if result:
+            heuristic_results[original_index] = {
+                "index": original_index,
+                "category": result.get("category", "Other"),
+                "confidence": result.get("confidence", 0.0),
+            }
+        else:
+            heuristic_results[original_index] = {"index": original_index, "category": "Other", "confidence": 0.0}
 
-    return [
-        results_by_index.get(
-            i,
-            heuristic_results[i] if heuristic_results[i]["category"] else {"index": i, "category": "Other", "confidence": 0.0},
-        )
-        for i in range(len(transactions))
-    ]
-
+    return heuristic_results
 
 def run_categorization_for_statement(statement):
     """

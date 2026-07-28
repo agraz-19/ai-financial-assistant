@@ -36,7 +36,8 @@ COLUMN_ALIASES = {
 
 DATE_FORMATS = [
     "%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%m/%d/%Y",
-    "%d %b %Y", "%d-%b-%Y", "%d/%m/%y",
+    "%d %b %Y", "%d-%b-%Y", "%d %b, %Y", "%b %d, %Y",
+    "%d %B %Y", "%B %d, %Y", "%d/%m/%y",
 ]
 
 # Minimum number of recognized columns a line needs to be considered "the header row"
