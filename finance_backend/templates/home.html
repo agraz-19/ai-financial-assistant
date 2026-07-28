@@ -13,8 +13,8 @@
         {% if user.is_authenticated %}
           <form method="post" action="{% url 'upload_statement' %}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center">
             {% csrf_token %}
-            <input type="file" name="file" class="form-control" required>
-            <button class="btn btn-dark" type="submit">Upload CSV</button>
+            <input type="file" name="file" class="form-control" accept=".csv,.pdf" required>
+            <button class="btn btn-dark" type="submit">Upload Statement</button>
           </form>
         {% else %}
           <a class="btn btn-dark" href="{% url 'login' %}">Log in to upload</a>
@@ -122,7 +122,7 @@
               </tr>
             {% empty %}
               <tr>
-                <td colspan="4" class="text-muted p-4">Upload a CSV to see transactions here.</td>
+                <td colspan="4" class="text-muted p-4">Upload a CSV or PDF statement to see transactions here.</td>
               </tr>
             {% endfor %}
           </tbody>
