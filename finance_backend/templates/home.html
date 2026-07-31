@@ -56,6 +56,47 @@
     </div>
   </div>
 
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">🔥 Largest Expense</div>
+        {% if largest_expense %}
+          <div class="fs-4 fw-bold">Rs. {{ largest_expense.amount|floatformat:2 }}</div>
+          <div class="text-muted small text-truncate">{{ largest_expense.description }}</div>
+          <div class="text-muted small">{{ largest_expense.date }} &middot; {{ largest_expense.category }}</div>
+        {% else %}
+          <div class="fs-5 text-muted">No expenses yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">🏪 Most Frequent Merchant</div>
+        {% if most_frequent_merchant %}
+          <div class="fs-4 fw-bold text-truncate">{{ most_frequent_merchant.name }}</div>
+          <div class="text-muted small">{{ most_frequent_merchant.count }} transactions</div>
+        {% else %}
+          <div class="fs-5 text-muted">No data yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">📅 Predicted Next Month Spend</div>
+        {% if predicted_next_month_spend is not None %}
+          <div class="fs-4 fw-bold">Rs. {{ predicted_next_month_spend|floatformat:2 }}</div>
+          <div class="text-muted small">Simple estimate, based on your recent monthly average</div>
+        {% else %}
+          <div class="fs-5 text-muted">Not enough data yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
   <div class="col-lg-7">
     <div class="card shadow-sm h-100">
       <div class="card-header bg-white fw-semibold">AI Insight</div>
@@ -98,6 +139,19 @@
 
   <div class="col-12">
     <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold">📈 Monthly Spending Trend</div>
+      <div class="card-body">
+        {% if monthly_trend %}
+          <canvas id="monthlyTrendChart" height="90"></canvas>
+        {% else %}
+          <p class="text-muted mb-0">Not enough data yet to show a trend.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card shadow-sm">
       <div class="card-header bg-white fw-semibold d-flex justify-content-between">
         <span>Recent Transactions</span>
         <span class="text-muted">{{ transaction_count }} transactions, {{ uncategorized_count }} uncategorized</span>
@@ -131,4 +185,55 @@
     </div>
   </div>
 </div>
+
+{{ monthly_trend|json_script:"monthly-trend-data" }}
+
+{% if monthly_trend %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+  const trendData = JSON.parse(document.getElementById('monthly-trend-data').textContent);
+  const labels = trendData.map(m => m.month);
+  const spending = trendData.map(m => m.spending);
+  const income = trendData.map(m => m.income);
+
+  new Chart(document.getElementById('monthlyTrendChart'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Spending',
+          data: spending,
+          borderColor: '#c0392b',
+          backgroundColor: 'rgba(192, 57, 43, 0.1)',
+          tension: 0.3,
+          fill: true,
+        },
+        {
+          label: 'Income',
+          data: income,
+          borderColor: '#27ae60',
+          backgroundColor: 'rgba(39, 174, 96, 0.1)',
+          tension: 0.3,
+          fill: true,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'top' },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: function(value) { return 'Rs. ' + value.toLocaleString(); }
+          }
+        }
+      }
+    }
+  });
+</script>
+{% endif %}
 {% endblock %}

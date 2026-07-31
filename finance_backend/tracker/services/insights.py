@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from decimal import Decimal
 
 import pandas as pd
@@ -18,6 +19,8 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "gpt-4o-mini")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 DASHBOARD_CACHE_TTL = 60 * 15  # 15 minutes
+
+MERCHANT_PREFIX_PATTERN = re.compile(r"^(paid to|received from|sent to)\s+", re.IGNORECASE)
 
 
 def _money(value: float | Decimal | int) -> str:
@@ -90,7 +93,15 @@ def build_monthly_financial_summary(transactions: QuerySet[Transaction]) -> dict
         spending_per_category.iloc[0]["category"] if not spending_per_category.empty else "None"
     )
 
+    # Explicitly ground the AI in the REAL date range of this data --
+    # without this, the model has no idea what period it's summarizing and
+    # will invent a plausible-sounding month/period on its own (observed:
+    # it hallucinated "October" for an Apr-Jul statement).
+    period_start = frame["date"].min().strftime("%d %b %Y")
+    period_end = frame["date"].max().strftime("%d %b %Y")
+
     summary_lines = [
+        f"Statement period: {period_start} to {period_end} (do not refer to any other month or date range)",
         f"Total spending: {_money(total_spending)}",
         f"Highest expense category: {highest_expense_category}",
         f"Monthly income: {_money(monthly_income)}",
@@ -109,6 +120,95 @@ def build_monthly_financial_summary(transactions: QuerySet[Transaction]) -> dict
             for _, row in spending_per_category.iterrows()
         ],
         "summary_text": "\n".join(summary_lines),
+    }
+
+
+def _normalize_merchant(description: str) -> str:
+    """Strips 'Paid to' / 'Received from' / 'Sent to' prefixes so the same
+    merchant paid multiple times groups together correctly."""
+    return MERCHANT_PREFIX_PATTERN.sub("", description or "").strip()
+
+
+def build_extended_analytics(transactions: QuerySet[Transaction]) -> dict:
+    """
+    Day 18 additions: largest single expense, most frequent merchant, a
+    month-by-month spending/income trend, and a simple trailing-average
+    next-month spending estimate.
+
+    The prediction is a lightweight, transparent estimate (average of the
+    last up to 3 months' spending) -- not a real forecasting model. Framed
+    honestly as an estimate rather than implying more predictive power than
+    it actually has.
+    """
+    txn_list = list(transactions.select_related("category"))
+
+    if not txn_list:
+        return {
+            "largest_expense": None,
+            "most_frequent_merchant": None,
+            "monthly_trend": [],
+            "predicted_next_month_spend": None,
+        }
+
+    # --- Largest single expense ---
+    expenses = [t for t in txn_list if t.amount < 0]
+    largest_expense = None
+    if expenses:
+        biggest = min(expenses, key=lambda t: t.amount)  # most negative = largest expense
+        largest_expense = {
+            "description": biggest.description,
+            "amount": abs(float(biggest.amount)),
+            "date": biggest.date,
+            "category": biggest.category.name if biggest.category else "Other",
+        }
+
+    # --- Most frequent merchant (by normalized description) ---
+    merchant_counts: dict[str, int] = {}
+    merchant_display: dict[str, str] = {}
+    for t in txn_list:
+        key = _normalize_merchant(t.description).upper()
+        if not key:
+            continue
+        merchant_counts[key] = merchant_counts.get(key, 0) + 1
+        merchant_display.setdefault(key, _normalize_merchant(t.description))
+
+    most_frequent_merchant = None
+    if merchant_counts:
+        top_key = max(merchant_counts, key=merchant_counts.get)
+        most_frequent_merchant = {
+            "name": merchant_display[top_key],
+            "count": merchant_counts[top_key],
+        }
+
+    # --- Monthly trend, grouped by calendar month within this statement's data ---
+    frame = _build_dataframe(transactions)
+    monthly_trend = []
+    if not frame.empty:
+        frame["month_period"] = frame["date"].dt.to_period("M")
+        grouped = frame.groupby("month_period")["amount"].agg(
+            spending=lambda s: -s[s < 0].sum(),
+            income=lambda s: s[s > 0].sum(),
+        ).reset_index()
+        grouped = grouped.sort_values("month_period")
+
+        for _, row in grouped.iterrows():
+            monthly_trend.append({
+                "month": row["month_period"].strftime("%b %Y"),
+                "spending": round(float(row["spending"]), 2),
+                "income": round(float(row["income"]), 2),
+            })
+
+    # --- Simple trailing-average prediction ---
+    predicted_next_month_spend = None
+    if monthly_trend:
+        recent = monthly_trend[-3:]  # up to the last 3 months
+        predicted_next_month_spend = round(sum(m["spending"] for m in recent) / len(recent), 2)
+
+    return {
+        "largest_expense": largest_expense,
+        "most_frequent_merchant": most_frequent_merchant,
+        "monthly_trend": monthly_trend,
+        "predicted_next_month_spend": predicted_next_month_spend,
     }
 
 
@@ -243,6 +343,10 @@ def _build_dashboard_context_uncached(user) -> dict:
             "ai_recommendations": [],
             "recent_transactions": [],
             "show_upload_prompt": True,
+            "largest_expense": None,
+            "most_frequent_merchant": None,
+            "monthly_trend": [],
+            "predicted_next_month_spend": None,
         }
 
     transactions = (
@@ -282,6 +386,8 @@ def _build_dashboard_context_uncached(user) -> dict:
     else:
         date_range = "No transactions"
 
+    analytics = build_extended_analytics(transactions)
+
     return {
         "month_label": date_range,
         "statement_filename": statement.file.name.rsplit("/", 1)[-1],
@@ -298,6 +404,10 @@ def _build_dashboard_context_uncached(user) -> dict:
         "ai_recommendations": ai_recommendations,
         "recent_transactions": recent_transactions,
         "show_upload_prompt": transactions.count() == 0,
+        "largest_expense": analytics["largest_expense"],
+        "most_frequent_merchant": analytics["most_frequent_merchant"],
+        "monthly_trend": analytics["monthly_trend"],
+        "predicted_next_month_spend": analytics["predicted_next_month_spend"],
     }
 
 
