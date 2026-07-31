@@ -10,3 +10,4 @@ sentence-transformers
 django-redis
 psycopg2-binary
 pdfplumber
+django-allauth
