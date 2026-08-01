@@ -16,7 +16,10 @@
           <a class="text-white-50 text-decoration-none" href="{% url 'upload_statement' %}">Upload</a>
           <a class="text-white-50 text-decoration-none" href="{% url 'chat' %}">Chat</a>
           {% if user.is_authenticated %}
-            <a class="text-white-50 text-decoration-none" href="{% url 'logout' %}">Logout</a>
+            <form method="post" action="{% url 'logout' %}" class="m-0">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-link text-white-50 text-decoration-none p-0 border-0 align-baseline">Logout</button>
+            </form>
           {% else %}
             <a class="text-white-50 text-decoration-none" href="{% url 'login' %}">Login</a>
           {% endif %}
@@ -24,7 +27,7 @@
       </div>
     </nav>
     <main class="container py-5">
-      {% if messages and not hide_messages %}
+      {% if messages and not hide_messages and request.resolver_match.url_name != "login" %}
         <div class="mb-4">
           {% for message in messages %}
             <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-{{ message.tags|default:'info' }}{% endif %} mb-2" role="alert">

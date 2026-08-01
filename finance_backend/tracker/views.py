@@ -150,7 +150,7 @@ def chat(request):
         return redirect("chat")
 
     messages_list = ChatMessage.objects.filter(user=request.user).order_by("created_at")
-    return render(request, "chat.html", {"chat_messages": messages_list})
+    return render(request, "chat.html", {"chat_messages": messages_list, "hide_messages": True})
 
 
 # --- DRF API (Phase 2, for the React frontend) -----------------------------

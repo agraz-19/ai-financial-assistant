@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-
+{% load socialaccount %}
+{% load static %}
 {% block content %}
 <div class="p-5 bg-white rounded-4 shadow-sm border" style="max-width: 400px;">
   <h1 class="h3 mb-4">Log in</h1>
@@ -7,6 +8,15 @@
   {% if form.errors %}
     <div class="alert alert-danger">Invalid username or password.</div>
   {% endif %}
+
+<a href="{% provider_login_url 'google' %}" class="btn btn-outline-dark w-100">
+    <img src="{% static 'images/google.svg' %}" width="20" class="me-2">
+    Continue with Google
+</a>
+
+<div class="text-center mb-3">
+    <small class="text-muted">OR</small>
+</div>
 
   <form method="post">
     {% csrf_token %}

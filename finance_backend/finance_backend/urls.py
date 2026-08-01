@@ -7,6 +7,7 @@ urlpatterns = [
     path("", include("tracker.urls")),
     path("accounts/", include("django.contrib.auth.urls")),  # add this
     path("admin/", admin.site.urls),
+    path("accounts/", include("allauth.urls")),
 ]
 
 if settings.DEBUG:
