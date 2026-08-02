@@ -2,6 +2,7 @@ import hashlib
 from io import BytesIO
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render
@@ -206,3 +207,41 @@ class SummaryView(APIView):
             "total_income": total_income,
             "uncategorized": transactions.filter(category__isnull=True).count(),
         })
+
+
+class DashboardAPIView(APIView):
+    """
+    Returns the complete dashboard payload for the React frontend.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        user = request.user
+
+        if not user.is_authenticated:
+            user = get_user_model().objects.get(username="1914")
+
+        context = build_dashboard_context(user)
+
+        return Response({
+            "month_label": context.get("month_label"),
+            "transaction_count": context.get("transaction_count"),
+            "uncategorized_count": context.get("uncategorized_count"),
+            "total_spending": context.get("total_spending"),
+            "monthly_income": context.get("monthly_income"),
+            "savings": context.get("savings"),
+            "highest_expense_category": context.get("highest_expense_category"),
+            "spending_per_category": context.get("spending_per_category"),
+            "monthly_trend": context.get("monthly_trend", []),
+            "largest_expense": context.get("largest_expense"),
+            "most_frequent_merchant": context.get("most_frequent_merchant"),
+            "predicted_next_month_spend": context.get("predicted_next_month_spend"),
+            "summary_text": context.get("summary_text"),
+            "ai_spending_summary": context.get("ai_spending_summary"),
+            "ai_budget_advice": context.get("ai_budget_advice"),
+            "ai_recommendations": context.get("ai_recommendations"),
+            "recent_transactions": context.get("recent_transactions", []),
+            "show_upload_prompt": context.get("show_upload_prompt"),
+        })
+    

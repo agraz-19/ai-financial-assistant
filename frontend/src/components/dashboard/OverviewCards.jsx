@@ -7,13 +7,12 @@ import {
 
 import KPICard from "./KPICard";
 
-export default function OverviewCards() {
+export default function OverviewCards({ data }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-
       <KPICard
         title="Total Income"
-        value="₹85,000"
+        value={`Rs.${Number(data?.monthly_income ?? 0).toLocaleString()}`}
         icon={<IndianRupee size={26} />}
         change="+12.4%"
         trend="up"
@@ -22,7 +21,7 @@ export default function OverviewCards() {
 
       <KPICard
         title="Total Expenses"
-        value="₹58,330"
+        value={`Rs.${Number(data?.total_spending ?? 0).toLocaleString()}`}
         icon={<Wallet size={26} />}
         change="-4.8%"
         trend="down"
@@ -31,7 +30,7 @@ export default function OverviewCards() {
 
       <KPICard
         title="Savings"
-        value="₹26,670"
+        value={`Rs.${Number(data?.savings ?? 0).toLocaleString()}`}
         icon={<PiggyBank size={26} />}
         change="+8.1%"
         trend="up"
@@ -46,7 +45,6 @@ export default function OverviewCards() {
         trend="up"
         color="purple"
       />
-
     </div>
   );
 }

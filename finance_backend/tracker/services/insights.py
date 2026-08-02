@@ -11,7 +11,7 @@ from django.db.models import QuerySet
 from django.utils import timezone
 from openai import OpenAI
 from django.db.models import F
-
+from tracker.serializers import TransactionSerializer
 from tracker.ai.prompts import INSIGHTS_PROMPT, INSIGHTS_SYSTEM_PROMPT
 from tracker.models import MonthlyInsight, Statement, Transaction
 
@@ -362,7 +362,10 @@ def _build_dashboard_context_uncached(user) -> dict:
         summary = generated["summary"]
         ai_output = generated["ai_output"]
 
-    recent_transactions = list(transactions[:10])
+    recent_transactions = TransactionSerializer(
+        transactions[:10],
+        many=True,
+    ).data
     uncategorized_count = transactions.filter(category__isnull=True).count()
 
     ai_spending_summary = insight.summary_text if insight else ""
