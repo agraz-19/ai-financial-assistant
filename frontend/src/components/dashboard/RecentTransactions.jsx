@@ -2,24 +2,30 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export default function RecentTransactions({ data }) {
+  const latestTransactions = (data || []).slice(0, 5);
+
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">
-            Recent Transactions
+            Latest 5
           </h2>
 
           <p className="text-slate-500 text-sm mt-1">
-            Your latest financial activity
+            Recent financial activity
           </p>
         </div>
 
-        <button className="text-blue-600 hover:text-blue-700 font-medium">
-          View All
-        </button>
+        <Link
+          to="/transactions"
+          className="text-blue-600 hover:text-blue-700 font-medium"
+        >
+          View All →
+        </Link>
       </div>
 
       <div className="overflow-x-auto">
@@ -35,7 +41,10 @@ export default function RecentTransactions({ data }) {
           </thead>
 
           <tbody>
-            {(data || []).map((item, index) => (
+            {latestTransactions.map((item, index) => {
+              const categoryName = item.category_name ?? item.category ?? "Other";
+
+              return (
               <tr
                 key={item.id ?? index}
                 className="border-b border-slate-100 hover:bg-slate-50 transition"
@@ -68,7 +77,7 @@ export default function RecentTransactions({ data }) {
                       </p>
 
                       <p className="text-sm text-slate-500">
-                        {item.category}
+                        {categoryName}
                       </p>
                     </div>
                   </div>
@@ -76,7 +85,7 @@ export default function RecentTransactions({ data }) {
 
                 <td>
                   <span className="px-3 py-1 rounded-full bg-slate-100 text-sm">
-                    {item.category}
+                    {categoryName}
                   </span>
                 </td>
 
@@ -91,8 +100,8 @@ export default function RecentTransactions({ data }) {
                       : "text-red-600"
                   }`}
                 >
-                  {item.amount > 0 ? "+" : "-"}Rs.
-                  {Math.abs(Number(item.amount ?? 0)).toLocaleString()}
+                  {item.amount > 0 ? "+" : "-"}₹
+                  {Math.abs(Number(item.amount ?? 0)).toLocaleString("en-IN")}
                 </td>
 
                 <td className="text-center">
@@ -101,7 +110,8 @@ export default function RecentTransactions({ data }) {
                   </span>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

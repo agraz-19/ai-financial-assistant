@@ -6,8 +6,26 @@ import {
   Sparkles,
 } from "lucide-react";
 
+function truncate(value, length = 90) {
+  if (!value) return "";
+  return value.length > length ? `${value.slice(0, length).trim()}…` : value;
+}
+
 export default function AIInsightCard({ data }) {
   const recommendations = data?.ai_recommendations ?? [];
+  const highestCategory = data?.highest_expense_category ?? "your top category";
+  const highestCategoryAmount = data?.spending_per_category?.[0]?.amount;
+  const formattedHighestCategoryAmount = highestCategoryAmount != null
+    ? `₹${Number(highestCategoryAmount).toLocaleString("en-IN")}`
+    : "—";
+  const savingsHint = data?.ai_budget_advice
+    ? truncate(data.ai_budget_advice, 140)
+    : `Reduce ${highestCategory.toLowerCase()} expenses.`;
+  const topRecommendation = truncate(recommendations[0], 140) || "Review your largest expense categories.";
+  const prediction = data?.predicted_next_month_spend
+    ? `Estimated spend: ₹${Number(data.predicted_next_month_spend).toLocaleString("en-IN")}`
+    : truncate(recommendations[1], 70) || "Keep discretionary spend under control.";
+  const detailSummary = truncate(data?.ai_spending_summary, 120) || "Get a concise AI recommendation once your statement is processed.";
 
   return (
     <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-700 rounded-3xl shadow-lg p-8 text-white">
@@ -43,11 +61,11 @@ export default function AIInsightCard({ data }) {
           </p>
 
           <h3 className="text-2xl font-bold mt-2">
-            {data?.highest_expense_category}
+            {highestCategory}
           </h3>
 
           <p className="mt-2 text-sm text-blue-100">
-            {data?.ai_spending_summary}
+            {formattedHighestCategoryAmount}
           </p>
         </div>
 
@@ -59,11 +77,11 @@ export default function AIInsightCard({ data }) {
           </p>
 
           <h3 className="text-2xl font-bold mt-2">
-            {data?.ai_budget_advice}
+            {savingsHint}
           </h3>
 
           <p className="mt-2 text-sm text-blue-100">
-            {recommendations[0]}
+            {topRecommendation}
           </p>
         </div>
 
@@ -75,11 +93,11 @@ export default function AIInsightCard({ data }) {
           </p>
 
           <h3 className="text-2xl font-bold mt-2">
-            {recommendations[1]}
+            {prediction}
           </h3>
 
           <p className="mt-2 text-sm text-blue-100">
-            {recommendations[2]}
+            {truncate(recommendations[2], 70) || "Monitor your budget weekly for better control."}
           </p>
         </div>
       </div>
@@ -90,8 +108,12 @@ export default function AIInsightCard({ data }) {
         </h3>
 
         <p className="mt-3 text-blue-100 leading-7">
-          {data?.ai_spending_summary}
+          {detailSummary}
         </p>
+
+        <button className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/20">
+          View Details →
+        </button>
       </div>
     </div>
   );

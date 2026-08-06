@@ -9,6 +9,22 @@ import {
 } from "recharts";
 
 export default function MonthlyTrendChart({ data }) {
+  const chartData = (data || []).map((item) => {
+    const income = Number(item.income ?? item.total_income ?? item.amount ?? 0);
+    const expense = Number(item.expense ?? item.spending ?? 0);
+    const savings = Number(
+      item.savings ??
+        Math.max(0, income - expense)
+    );
+
+    return {
+      month: item.month ?? item.month_label ?? "Unknown",
+      income,
+      expense,
+      savings,
+    };
+  });
+
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 h-[420px]">
       <div className="mb-6">
@@ -22,7 +38,7 @@ export default function MonthlyTrendChart({ data }) {
       </div>
 
       <ResponsiveContainer width="100%" height="82%">
-        <LineChart data={data}>
+        <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" />
 
           <XAxis dataKey="month" />

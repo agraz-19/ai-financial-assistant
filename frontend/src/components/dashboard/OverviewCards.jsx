@@ -5,6 +5,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import CountUp from "../common/CountUp";
 import KPICard from "./KPICard";
 
 export default function OverviewCards({ data }) {
@@ -12,7 +13,13 @@ export default function OverviewCards({ data }) {
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
       <KPICard
         title="Total Income"
-        value={`Rs.${Number(data?.monthly_income ?? 0).toLocaleString()}`}
+        value={
+          <CountUp
+            value={data?.monthly_income ?? 0}
+            prefix="₹"
+            formatter={(value) => value.toLocaleString("en-IN")}
+          />
+        }
         icon={<IndianRupee size={26} />}
         change="+12.4%"
         trend="up"
@@ -21,7 +28,13 @@ export default function OverviewCards({ data }) {
 
       <KPICard
         title="Total Expenses"
-        value={`Rs.${Number(data?.total_spending ?? 0).toLocaleString()}`}
+        value={
+          <CountUp
+            value={data?.total_spending ?? 0}
+            prefix="₹"
+            formatter={(value) => value.toLocaleString("en-IN")}
+          />
+        }
         icon={<Wallet size={26} />}
         change="-4.8%"
         trend="down"
@@ -30,7 +43,13 @@ export default function OverviewCards({ data }) {
 
       <KPICard
         title="Savings"
-        value={`Rs.${Number(data?.savings ?? 0).toLocaleString()}`}
+        value={
+          <CountUp
+            value={data?.savings ?? 0}
+            prefix="₹"
+            formatter={(value) => value.toLocaleString("en-IN")}
+          />
+        }
         icon={<PiggyBank size={26} />}
         change="+8.1%"
         trend="up"

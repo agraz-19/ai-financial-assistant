@@ -1,25 +1,19 @@
 import hashlib
-from io import BytesIO
 
 from django.contrib import messages
-from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.db import transaction
+from django.http import FileResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.generic import TemplateView
 from rest_framework import permissions, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .ai.categorize import run_categorization_for_statement
 from .ai.rag_chat import ask_and_save
 from .models import Category, Statement, Transaction, ChatMessage
-from .parsers.csv_parser import CSVParseError, parse_csv_statement, save_transactions
 from .services.insights import build_dashboard_context
 from .serializers import CategorySerializer, StatementSerializer, TransactionSerializer
-from .ai.embeddings import embed_transactions_for_statement
-from .services.insights import refresh_after_new_data
-from .parsers.pdf_parser import PDFParseError, parse_pdf_statement
+from .services.upload_service import process_uploaded_statement
 
 
 # --- Template views (Phase 1) ---------------------------------------------
@@ -54,6 +48,10 @@ class HomeView(TemplateView):
 
 @login_required
 def upload_statement(request):
+    """
+    Old Django template upload view.
+    Uses process_uploaded_statement() service for consistency with DRF endpoint.
+    """
     if request.method != "POST":
         return render(request, "upload_statement.html")
 
@@ -66,78 +64,35 @@ def upload_statement(request):
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     file_obj.seek(0)
 
+    # Create or get statement
     file_type = (
         Statement.FileType.CSV
         if file_obj.name.lower().endswith(".csv")
         else Statement.FileType.PDF
     )
 
-    try:
-        if file_type == Statement.FileType.CSV:
-            parsed, warnings = parse_csv_statement(BytesIO(file_bytes))
-        else:
-            parsed, warnings = parse_pdf_statement(BytesIO(file_bytes))
-    except CSVParseError as e:
-        messages.error(request, f"CSV parsing failed: {e}")
-        return redirect("home")
-    except PDFParseError as e:
-        messages.error(request, f"PDF parsing failed: {e}")
-        return redirect("home")
+    statement, created = Statement.objects.get_or_create(
+        user=request.user,
+        file_hash=file_hash,
+        defaults={
+            "file": file_obj,
+            "file_type": file_type,
+            "status": Statement.Status.UPLOADED,
+        },
+    )
 
-    with transaction.atomic():
-        statement, created = Statement.objects.get_or_create(
-            user=request.user,
-            file_hash=file_hash,
-            defaults={
-                "file": file_obj,
-                "file_type": file_type,
-                "status": Statement.Status.PROCESSING,
-            },
-        )
+    # Process upload using unified service
+    try:
+        result = process_uploaded_statement(statement, file_obj)
 
         if created:
-            statement.file = file_obj
+            messages.success(request, f"Uploaded a new {file_type} statement.")
         else:
-            statement.transactions.all().delete()
-            statement.file = file_obj
-            statement.file_type = file_type
-            statement.status = Statement.Status.PROCESSING
-            statement.error_message = None
-            statement.processed_at = None
+            messages.info(request, f"Reprocessed the existing {file_type} statement.")
 
-        statement.save()
-        count = save_transactions(statement, parsed)
-        statement.status = Statement.Status.COMPLETED
-        statement.processed_at = timezone.now()
-        statement.save(update_fields=["status", "processed_at"])
-
-    if created:
-        messages.success(request, f"Uploaded a new {file_type} statement.")
-    else:
-        messages.info(request, f"Reprocessed the existing {file_type} statement and replaced its transactions.")
-    messages.success(request, f"Saved {count} transactions.")
-    for warning in warnings:
-        messages.warning(request, warning)
-
-    try:
-        categorized_count = run_categorization_for_statement(statement)
-        if categorized_count:
-            messages.success(request, f"AI categorized {categorized_count} transactions.")
+        messages.success(request, f"Saved {result['transaction_count']} transactions.")
     except Exception as e:
-        # Transactions are already saved, so keep the upload successful.
-        messages.warning(request, f"Categorization failed: {e}")
-
-    try:
-        embedded_count = embed_transactions_for_statement(statement)
-        if embedded_count:
-            messages.success(request, f"Embedded {embedded_count} transactions for search.")
-    except Exception as embedding_error:
-        messages.warning(request, f"Embedding skipped: {embedding_error}")
-
-    try:
-        refresh_after_new_data(request.user, statement)
-    except Exception as insight_error:
-        messages.warning(request, f"Dashboard insight refresh skipped: {insight_error}")
+        messages.error(request, f"Upload failed: {e}")
 
     return redirect("home")
 
@@ -169,14 +124,76 @@ class StatementViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Statement.objects.filter(user=self.request.user).order_by("-uploaded_at")
 
-    def perform_create(self, serializer):
-        file_obj = self.request.FILES.get("file")
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
+    def create(self, request, *args, **kwargs):
+        """
+        Override create to handle full upload workflow.
+        Uses process_uploaded_statement() service for consistency.
+        """
+        file_obj = request.FILES.get("file")
+        if not file_obj:
+            return Response({"error": "No file provided"}, status=400)
+
+        # Read file bytes and compute hash BEFORE file_obj is consumed
+        file_bytes = file_obj.read()
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        file_obj.seek(0)
+
         file_type = (
             Statement.FileType.CSV
-            if file_obj and file_obj.name.lower().endswith(".csv")
+            if file_obj.name.lower().endswith(".csv")
             else Statement.FileType.PDF
         )
-        serializer.save(user=self.request.user, file_type=file_type)
+
+        # Create or get statement (avoid duplicate-file integrity error)
+        statement, created = Statement.objects.get_or_create(
+            user=request.user,
+            file_hash=file_hash,
+            defaults={
+                "file": file_obj,
+                "file_type": file_type,
+                "status": Statement.Status.UPLOADED,
+            },
+        )
+
+        # Process upload using unified service
+        try:
+            result = process_uploaded_statement(statement, file_obj)
+            # Refresh from DB to get updated status
+            statement.refresh_from_db()
+        except Exception as e:
+            # process_uploaded_statement already set FAILED status
+            statement.refresh_from_db()
+
+        # Serialize and return
+        serializer = self.get_serializer(statement)
+        return Response(serializer.data, status=201 if created else 200)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a statement and all its transactions.
+        Also cleans up the statement's embeddings from ChromaDB.
+        """
+        statement = self.get_object()
+
+        # Clean up ChromaDB embeddings for this statement's transactions
+        try:
+            from .ai.embeddings import _get_collection
+            collection = _get_collection()
+            ids = [str(t.id) for t in statement.transactions.all()]
+            if ids:
+                collection.delete(ids=ids)
+        except Exception as e:
+            print(f"[StatementViewSet.destroy] ChromaDB cleanup skipped: {e}")
+
+        # Delete the statement (cascades to transactions via FK)
+        statement.delete()
+
+        return Response(status=204)
 
 
 class TransactionViewSet(viewsets.ModelViewSet):
@@ -184,14 +201,43 @@ class TransactionViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return (
+        # Support filtering transactions by statement
+        statement_id = self.request.query_params.get("statement")
+        queryset = (
             Transaction.objects.filter(user=self.request.user)
             .select_related("category", "statement")
             .order_by("-date")
         )
+        if statement_id:
+            queryset = queryset.filter(statement_id=statement_id)
+        return queryset
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+class StatementDownloadView(APIView):
+    """
+    Downloads the original uploaded statement file.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, statement_id):
+        try:
+            statement = Statement.objects.get(id=statement_id, user=request.user)
+        except Statement.DoesNotExist:
+            return Response({"error": "Statement not found"}, status=404)
+
+        if not statement.file:
+            return Response({"error": "Statement has no file"}, status=404)
+
+        response = FileResponse(
+            statement.file.open("rb"),
+            as_attachment=True,
+            filename=statement.file.name.rsplit("/", 1)[-1],
+        )
+        return response
 
 
 class SummaryView(APIView):
@@ -214,15 +260,10 @@ class DashboardAPIView(APIView):
     Returns the complete dashboard payload for the React frontend.
     """
 
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-
-        if not user.is_authenticated:
-            user = get_user_model().objects.get(username="1914")
-
-        context = build_dashboard_context(user)
+        context = build_dashboard_context(request.user)
 
         return Response({
             "month_label": context.get("month_label"),
@@ -244,4 +285,17 @@ class DashboardAPIView(APIView):
             "recent_transactions": context.get("recent_transactions", []),
             "show_upload_prompt": context.get("show_upload_prompt"),
         })
-    
+
+
+class CurrentUserAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            "id": user.id,
+            "username": user.get_username(),
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+        })

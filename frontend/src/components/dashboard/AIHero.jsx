@@ -7,7 +7,11 @@ import {
   Bot,
 } from "lucide-react";
 
-export default function AIHero() {
+export default function AIHero({ data }) {
+  const savings = Number(data?.savings ?? 0);
+  const insightsCount = data?.ai_recommendations?.length ?? 0;
+  const hasData = Boolean(data?.month_label && data.month_label !== "No data yet");
+
   return (
     <div className="rounded-3xl bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 p-8 text-white shadow-xl">
 
@@ -22,11 +26,16 @@ export default function AIHero() {
         <div>
 
           <h1 className="text-4xl font-bold">
-            Good Evening, Agraz 👋
+            Welcome back, Agraz 👋
           </h1>
 
           <p className="text-blue-100 mt-2 text-lg">
-            Upload statements, analyze spending, and ask AI anything about your money.
+            You saved ₹{savings.toLocaleString("en-IN")} this month.
+          </p>
+
+          <p className="text-blue-100 mt-1 text-sm">
+            {insightsCount} new insight{insightsCount === 1 ? "" : "s"} available.
+            {hasData ? "" : " Upload a statement to get started."}
           </p>
 
         </div>

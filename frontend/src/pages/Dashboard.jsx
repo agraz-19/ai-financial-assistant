@@ -6,11 +6,34 @@ import OverviewCards from "../components/dashboard/OverviewCards";
 import RecentTransactions from "../components/dashboard/RecentTransactions";
 import useDashboard from "../hooks/useDashboard";
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-8 animate-pulse">
+      <div className="rounded-3xl bg-slate-200 h-64" />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        <div className="rounded-3xl bg-slate-200 h-40" />
+        <div className="rounded-3xl bg-slate-200 h-40" />
+        <div className="rounded-3xl bg-slate-200 h-40" />
+        <div className="rounded-3xl bg-slate-200 h-40" />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="rounded-3xl bg-slate-200 h-[420px]" />
+        <div className="rounded-3xl bg-slate-200 h-[420px]" />
+      </div>
+
+      <div className="rounded-3xl bg-slate-200 h-[320px]" />
+      <div className="rounded-3xl bg-slate-200 h-[520px]" />
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { dashboard, loading, error } = useDashboard();
 
   if (loading) {
-    return <div className="p-10">Loading Dashboard...</div>;
+    return <DashboardSkeleton />;
   }
 
   if (error) {
@@ -24,7 +47,7 @@ export default function Dashboard() {
   return (
     <>
       <div className="space-y-8">
-        <AIHero />
+        <AIHero data={dashboard} />
 
         <OverviewCards data={dashboard} />
 

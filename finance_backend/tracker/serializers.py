@@ -11,13 +11,31 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class StatementSerializer(serializers.ModelSerializer):
+    transaction_count = serializers.SerializerMethodField()
+    filename = serializers.CharField(source="file.name", read_only=True)
+    download_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Statement
         fields = [
-            "id", "file", "file_type", "status",
+            "id", "file", "filename", "file_type", "status",
             "error_message", "uploaded_at", "processed_at",
+            "transaction_count", "download_url",
         ]
         read_only_fields = ["status", "error_message", "uploaded_at", "processed_at"]
+
+    def get_transaction_count(self, obj):
+        return obj.transactions.count()
+
+    def get_download_url(self, obj):
+        """Absolute download URL for the original uploaded file."""
+        if not obj.file:
+            return None
+        request = self.context.get("request")
+        url = obj.file.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
 
 
 class TransactionSerializer(serializers.ModelSerializer):

@@ -16,6 +16,11 @@ const COLORS = [
 ];
 
 export default function ExpensePieChart({ data }) {
+  const chartData = (data || []).map((item) => ({
+    name: item.name ?? item.category ?? "Unknown",
+    value: Number(item.value ?? item.amount ?? 0),
+  }));
+
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 h-[420px]">
       <div className="flex items-center justify-between mb-6">
@@ -33,18 +38,19 @@ export default function ExpensePieChart({ data }) {
       <ResponsiveContainer width="100%" height="82%">
         <PieChart>
           <Pie
-            data={data}
+            data={chartData}
             cx="50%"
             cy="50%"
             outerRadius={110}
             innerRadius={60}
             paddingAngle={3}
             dataKey="value"
+            nameKey="name"
             animationDuration={900}
           >
-            {(data || []).map((entry, index) => (
+            {chartData.map((entry, index) => (
               <Cell
-                key={entry.category ?? entry.name}
+                key={`${entry.name}-${index}`}
                 fill={COLORS[index % COLORS.length]}
               />
             ))}
