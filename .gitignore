@@ -1,6 +1,7 @@
 # Python / Django
 *.pyc
 __pycache__/
+finance_backend/tracker/services/**/__pycache__/
 *.env
 .venv/
 venv/
@@ -22,3 +23,6 @@ frontend/dist/
 Thumbs.db
 *.log
 DEV_LOG.md
+AUTH_UPLOAD_CLEANUP_REPORT.md
+graphify-out
+AI_Project_Files

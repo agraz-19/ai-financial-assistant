@@ -3,9 +3,37 @@ import StatementCard from "./StatementCard";
 
 export default function StatementHistory({
   statements,
+  loading,
+  error,
   onViewStatement,
   onDeleteStatement,
 }) {
+  if (loading) {
+    return (
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-6">
+          Upload History
+        </h2>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-8 text-slate-500">
+          Loading statements...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        <h2 className="text-2xl font-bold text-slate-800 mb-6">
+          Upload History
+        </h2>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-red-700">
+          {error}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <h2 className="text-2xl font-bold text-slate-800 mb-6">

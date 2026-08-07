@@ -9,6 +9,8 @@ export default function StatementCard({
 }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const filename = statement?.filename || statement?.file || "";
+  const baseName = filename.split("/").pop() || "Statement";
 
   // Determine provider from filename
   const getProvider = (filename) => {
@@ -28,8 +30,8 @@ export default function StatementCard({
     return "from-slate-500 to-slate-600";
   };
 
-  const provider = getProvider(statement.filename);
-  const providerColor = getProviderColor(statement.filename);
+  const provider = getProvider(filename);
+  const providerColor = getProviderColor(filename);
 
   // Format date
   const formatDate = (dateString) => {
@@ -45,7 +47,7 @@ export default function StatementCard({
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
-      await downloadStatement(statement.id, statement.filename);
+      await downloadStatement(statement.id, filename);
     } catch (err) {
       console.error("[StatementCard] Download error:", err);
     } finally {
@@ -86,7 +88,7 @@ export default function StatementCard({
           <div>
             <p className="text-sm text-slate-500">{provider}</p>
             <h3 className="text-lg font-semibold text-slate-800">
-              {statement.filename.replace(/\.[^/.]+$/, "")}
+              {baseName.replace(/\.[^/.]+$/, "")}
             </h3>
           </div>
         </div>

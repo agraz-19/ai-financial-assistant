@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from os.path import basename
 
 from .models import Category, ChatMessage, MonthlyInsight, Statement, Transaction
 
@@ -12,7 +13,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
 class StatementSerializer(serializers.ModelSerializer):
     transaction_count = serializers.SerializerMethodField()
-    filename = serializers.CharField(source="file.name", read_only=True)
+    filename = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -26,6 +27,11 @@ class StatementSerializer(serializers.ModelSerializer):
 
     def get_transaction_count(self, obj):
         return obj.transactions.count()
+
+    def get_filename(self, obj):
+        if not obj.file:
+            return ""
+        return basename(obj.file.name)
 
     def get_download_url(self, obj):
         """Absolute download URL for the original uploaded file."""

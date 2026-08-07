@@ -8,7 +8,10 @@ import {
 
 function truncate(value, length = 90) {
   if (!value) return "";
-  return value.length > length ? `${value.slice(0, length).trim()}…` : value;
+  if (value.length <= length) return value;
+  const trimmed = value.slice(0, length);
+  const lastSpace = trimmed.lastIndexOf(" ");
+  return `${(lastSpace > 0 ? trimmed.slice(0, lastSpace) : trimmed).trim()}…`;
 }
 
 export default function AIInsightCard({ data }) {

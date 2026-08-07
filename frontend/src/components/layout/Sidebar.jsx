@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
+import { useAuth } from "../../context/useAuth";
+
 const menuItems = [
   {
     title: "Dashboard",
@@ -42,6 +44,11 @@ const menuItems = [
 ];
 
 export default function Sidebar() {
+  const { user } = useAuth();
+  const displayName = user?.username || "Authenticated user";
+  const displayEmail = user?.email || "JWT session active";
+  const initials = displayName.slice(0, 1).toUpperCase();
+
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col shadow-sm">
 
@@ -108,17 +115,17 @@ export default function Sidebar() {
         <div className="flex items-center gap-3">
 
           <div className="w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center font-semibold">
-            A
+            {initials}
           </div>
 
           <div>
 
             <p className="font-semibold text-slate-800">
-              Agraz
+              {displayName}
             </p>
 
             <p className="text-sm text-slate-500">
-              Google Connected
+              {displayEmail}
             </p>
 
           </div>

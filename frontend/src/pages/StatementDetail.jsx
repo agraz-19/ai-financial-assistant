@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Download, Smartphone } from "lucide-react";
 import {
@@ -16,11 +16,7 @@ export default function StatementDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    loadStatement();
-  }, [id]);
-
-  const loadStatement = async () => {
+  const loadStatement = useCallback(async () => {
     try {
       setIsLoading(true);
       const [stmtData, txnData] = await Promise.all([
@@ -36,7 +32,15 @@ export default function StatementDetail() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      void loadStatement();
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [loadStatement]);
 
   const handleDownload = async () => {
     try {

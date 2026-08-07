@@ -11,7 +11,6 @@ from django.db.models import QuerySet
 from django.utils import timezone
 from openai import OpenAI
 from django.db.models import F
-from tracker.serializers import TransactionSerializer
 from tracker.ai.prompts import INSIGHTS_PROMPT, INSIGHTS_SYSTEM_PROMPT
 from tracker.models import MonthlyInsight, Statement, Transaction
 
@@ -29,11 +28,8 @@ def _money(value: float | Decimal | int) -> str:
 
 def get_latest_statement(user) -> Statement | None:
     """
-    The single source of truth for 'which upload is currently active'.
-    Sorts by processed_at (when the data was actually last (re)processed),
-    not uploaded_at (which never changes once a Statement row is first
-    created -- so re-uploading/reprocessing the same file wouldn't make it
-    "latest" again if sorted by uploaded_at alone).
+    Sorts by processed_at (falls back to uploaded_at) so reprocessing a
+    statement makes it "latest" again.
     """
     return (
         Statement.objects.filter(user=user)
@@ -233,6 +229,44 @@ def _fallback_ai_response(summary: dict) -> dict:
         ),
         "recommendations": recommendations[:3],
     }
+def resolve_dashboard_statement(user, scope: str, statement_id) -> Statement | None:
+    """
+    scope='statement': the requested statement if it belongs to this user,
+    else falls back to the latest upload.
+    scope='all': always None -- no single-statement scoping.
+    """
+    if scope != "statement":
+        return None
+    if statement_id:
+        found = Statement.objects.filter(user=user, id=statement_id).first()
+        if found:
+            return found
+    return get_latest_statement(user)
+
+
+def _empty_dashboard_context() -> dict:
+    return {
+        "month_label": "No data yet",
+        "statement_id": None,
+        "statement_filename": None,
+        "transaction_count": 0,
+        "uncategorized_count": 0,
+        "total_spending": 0.0,
+        "monthly_income": 0.0,
+        "savings": 0.0,
+        "highest_expense_category": "None",
+        "spending_per_category": [],
+        "summary_text": "",
+        "ai_spending_summary": "",
+        "ai_budget_advice": "",
+        "ai_recommendations": [],
+        "recent_transactions": [],
+        "show_upload_prompt": True,
+        "largest_expense": None,
+        "most_frequent_merchant": None,
+        "monthly_trend": [],
+        "predicted_next_month_spend": None,
+    }
 
 
 def generate_ai_insights(summary: dict) -> dict:
@@ -321,79 +355,77 @@ def refresh_after_new_data(user, statement: Statement) -> None:
 
 
 def _dashboard_cache_key(user, statement: Statement) -> str:
-    return f"dashboard:{user.id}:{statement.id}"
+    version = statement.processed_at or statement.uploaded_at
+    version_key = version.isoformat() if version else "unknown"
+    return f"dashboard:{user.id}:{statement.id}:{version_key}"
 
 
-def _build_dashboard_context_uncached(user) -> dict:
-    statement = get_latest_statement(user)
+def _build_dashboard_context_uncached(user, scope: str, statement: Statement | None) -> dict:
+    if scope == "statement":
+        if statement is None:
+            return _empty_dashboard_context()
+        transactions = statement.transactions.select_related("category").order_by("-date", "-id")
+    else:
+        transactions = (
+            Transaction.objects.filter(user=user)
+            .select_related("category")
+            .order_by("-date", "-id")
+        )
 
-    if statement is None:
-        return {
-            "month_label": "No data yet",
-            "transaction_count": 0,
-            "uncategorized_count": 0,
-            "total_spending": 0.0,
-            "monthly_income": 0.0,
-            "savings": 0.0,
-            "highest_expense_category": "None",
-            "spending_per_category": [],
-            "summary_text": "",
-            "ai_spending_summary": "",
-            "ai_budget_advice": "",
-            "ai_recommendations": [],
-            "recent_transactions": [],
-            "show_upload_prompt": True,
-            "largest_expense": None,
-            "most_frequent_merchant": None,
-            "monthly_trend": [],
-            "predicted_next_month_spend": None,
-        }
-
-    transactions = (
-        statement.transactions.select_related("category").order_by("-date", "-id")
-    )
+    if not transactions.exists():
+        return _empty_dashboard_context()
 
     summary = build_monthly_financial_summary(transactions)
-    insight = MonthlyInsight.objects.filter(user=user, statement=statement).first()
-    ai_output = None
-    if insight is None:
-        generated = generate_insight_for_statement(user, statement)
-        insight = generated["insight"]
-        summary = generated["summary"]
-        ai_output = generated["ai_output"]
 
-    recent_transactions = TransactionSerializer(
-        transactions[:10],
-        many=True,
-    ).data
-    uncategorized_count = transactions.filter(category__isnull=True).count()
-
-    ai_spending_summary = insight.summary_text if insight else ""
-    ai_budget_advice = ""
-    ai_recommendations: list[str] = []
-
-    if insight:
-        ai_budget_advice, ai_recommendations = _parse_budget_payload(insight.budget_recommendation)
-
-    if ai_output:
+    if scope == "statement":
+        # Persisted, per-statement AI narrative (existing behavior).
+        insight = MonthlyInsight.objects.filter(user=user, statement=statement).first()
+        if insight is None:
+            generated = generate_insight_for_statement(user, statement)
+            insight = generated["insight"]
+            summary = generated["summary"]
+            ai_spending_summary = generated["ai_output"]["spending_summary"]
+            ai_budget_advice = generated["ai_output"]["budget_advice"]
+            ai_recommendations = generated["ai_output"]["recommendations"]
+        else:
+            ai_spending_summary = insight.summary_text
+            ai_budget_advice, ai_recommendations = _parse_budget_payload(insight.budget_recommendation)
+    else:
+        # All-time view has no single Statement to persist a MonthlyInsight
+        # against -- generated fresh here. Cheap: the whole context is
+        # already cache-wrapped by build_dashboard_context.
+        ai_output = generate_ai_insights(summary)
         ai_spending_summary = ai_output["spending_summary"]
         ai_budget_advice = ai_output["budget_advice"]
         ai_recommendations = ai_output["recommendations"]
 
-    # Label the dashboard with the actual date range of this statement's
-    # data, and its filename, so it's unambiguous which upload you're viewing.
+    recent_transactions = [
+        {
+            "id": txn.id,
+            "date": txn.date,
+            "description": txn.description,
+            "amount": float(txn.amount),
+            "category": txn.category.name if txn.category else "Other",
+            "is_ai_categorized": txn.is_ai_categorized,
+        }
+        for txn in transactions[:10]
+    ]
+    uncategorized_count = transactions.filter(category__isnull=True).count()
+
     first_date = transactions.order_by("date").first()
     last_date = transactions.order_by("-date").first()
-    if first_date and last_date:
-        date_range = f"{first_date.date.strftime('%d %b %Y')} - {last_date.date.strftime('%d %b %Y')}"
-    else:
-        date_range = "No transactions"
+    date_range = (
+        f"{first_date.date.strftime('%d %b %Y')} - {last_date.date.strftime('%d %b %Y')}"
+        if first_date and last_date else "No transactions"
+    )
+    month_label = date_range if scope == "statement" else f"All Time ({date_range})"
 
     analytics = build_extended_analytics(transactions)
 
     return {
-        "month_label": date_range,
-        "statement_filename": statement.file.name.rsplit("/", 1)[-1],
+        "month_label": month_label,
+        "statement_id": statement.id if statement else None,
+        "statement_filename": statement.file.name.rsplit("/", 1)[-1] if statement else None,
         "transaction_count": transactions.count(),
         "uncategorized_count": uncategorized_count,
         "total_spending": summary["total_spending"],
@@ -414,23 +446,33 @@ def _build_dashboard_context_uncached(user) -> dict:
     }
 
 
-def build_dashboard_context(user) -> dict:
-    """
-    Cached wrapper. Cache key includes the latest statement's id, so
-    uploading a new statement automatically produces a cache miss on the
-    next load -- no manual invalidation needed for the cache itself (though
-    refresh_after_new_data still eagerly regenerates the AI narrative so the
-    very first load after upload is already fresh, not just "eventually").
-    """
-    statement = get_latest_statement(user)
-    if statement is None:
-        return _build_dashboard_context_uncached(user)
+def _dashboard_cache_key(user, scope: str, statement: Statement | None) -> str:
+    if scope == "statement" and statement is not None:
+        version = statement.processed_at or statement.uploaded_at
+        version_key = version.isoformat() if version else "unknown"
+        return f"dashboard:{user.id}:statement:{statement.id}:{version_key}"
 
-    cache_key = _dashboard_cache_key(user, statement)
+    # All-time key: any new/reprocessed statement should invalidate it.
+    latest = get_latest_statement(user)
+    version = (latest.processed_at or latest.uploaded_at) if latest else None
+    version_key = version.isoformat() if version else "none"
+    return f"dashboard:{user.id}:all:{version_key}"
+
+
+def build_dashboard_context(user, scope: str = "all", statement_id=None) -> dict:
+    """
+    scope='all' (default): aggregates every transaction across all statements.
+    scope='statement': one specific statement -- `statement_id` if given and
+    owned by the user, else falls back to their latest upload.
+    """
+    scope = scope if scope in ("all", "statement") else "all"
+    statement = resolve_dashboard_statement(user, scope, statement_id)
+
+    cache_key = _dashboard_cache_key(user, scope, statement)
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
-    context = _build_dashboard_context_uncached(user)
+    context = _build_dashboard_context_uncached(user, scope, statement)
     cache.set(cache_key, context, timeout=DASHBOARD_CACHE_TTL)
     return context

@@ -1,14 +1,20 @@
 import hashlib
-
+import os
+from os.path import basename
+from urllib.parse import quote
+from .serializers import CategorySerializer, StatementSerializer, TransactionSerializer, ChatMessageSerializer
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import FileResponse
+from django.http import FileResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.conf import settings
 from django.utils import timezone
+from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 from rest_framework import permissions, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 from .ai.rag_chat import ask_and_save
 from .models import Category, Statement, Transaction, ChatMessage
 from .services.insights import build_dashboard_context
@@ -75,7 +81,6 @@ def upload_statement(request):
         user=request.user,
         file_hash=file_hash,
         defaults={
-            "file": file_obj,
             "file_type": file_type,
             "status": Statement.Status.UPLOADED,
         },
@@ -107,6 +112,38 @@ def chat(request):
 
     messages_list = ChatMessage.objects.filter(user=request.user).order_by("created_at")
     return render(request, "chat.html", {"chat_messages": messages_list, "hide_messages": True})
+
+
+@login_required
+@require_GET
+def session_jwt(request):
+    refresh = RefreshToken.for_user(request.user)
+    return JsonResponse({
+        "access": str(refresh.access_token),
+        "refresh": str(refresh),
+        "user": {
+            "id": request.user.id,
+            "username": request.user.get_username(),
+            "email": request.user.email,
+            "first_name": request.user.first_name,
+            "last_name": request.user.last_name,
+        },
+    })
+
+
+@login_required
+@require_GET
+def google_login_complete(request):
+    frontend_url = os.getenv(
+        "FRONTEND_URL",
+        settings.CORS_ALLOWED_ORIGINS[0] if getattr(settings, "CORS_ALLOWED_ORIGINS", None) else "http://localhost:5173",
+    ).rstrip("/")
+    refresh = RefreshToken.for_user(request.user)
+    access_token = quote(str(refresh.access_token), safe="")
+    refresh_token = quote(str(refresh), safe="")
+    return redirect(
+        f"{frontend_url}/dashboard#access={access_token}&refresh={refresh_token}"
+    )
 
 
 # --- DRF API (Phase 2, for the React frontend) -----------------------------
@@ -154,7 +191,6 @@ class StatementViewSet(viewsets.ModelViewSet):
             user=request.user,
             file_hash=file_hash,
             defaults={
-                "file": file_obj,
                 "file_type": file_type,
                 "status": Statement.Status.UPLOADED,
             },
@@ -165,13 +201,19 @@ class StatementViewSet(viewsets.ModelViewSet):
             result = process_uploaded_statement(statement, file_obj)
             # Refresh from DB to get updated status
             statement.refresh_from_db()
-        except Exception as e:
+        except Exception:
             # process_uploaded_statement already set FAILED status
             statement.refresh_from_db()
+            result = {
+                "warnings": [],
+            }
 
         # Serialize and return
         serializer = self.get_serializer(statement)
-        return Response(serializer.data, status=201 if created else 200)
+        response_data = serializer.data
+        if result.get("warnings"):
+            response_data["warnings"] = result["warnings"]
+        return Response(response_data, status=201 if created else 200)
 
     def destroy(self, request, *args, **kwargs):
         """
@@ -201,16 +243,30 @@ class TransactionViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Support filtering transactions by statement
-        statement_id = self.request.query_params.get("statement")
-        queryset = (
-            Transaction.objects.filter(user=self.request.user)
-            .select_related("category", "statement")
-            .order_by("-date")
-        )
-        if statement_id:
-            queryset = queryset.filter(statement_id=statement_id)
-        return queryset
+            params = self.request.query_params
+            queryset = (
+                Transaction.objects.filter(user=self.request.user)
+                .select_related("category", "statement")
+                .order_by("-date")
+            )
+
+            statement_id = params.get("statement")
+            if statement_id:
+                queryset = queryset.filter(statement_id=statement_id)
+
+            category_id = params.get("category")
+            if category_id:
+                queryset = queryset.filter(category_id=category_id)
+
+            date_from = params.get("date_from")
+            if date_from:
+                queryset = queryset.filter(date__gte=date_from)
+
+            date_to = params.get("date_to")
+            if date_to:
+                queryset = queryset.filter(date__lte=date_to)
+
+            return queryset
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -235,7 +291,7 @@ class StatementDownloadView(APIView):
         response = FileResponse(
             statement.file.open("rb"),
             as_attachment=True,
-            filename=statement.file.name.rsplit("/", 1)[-1],
+            filename=basename(statement.file.name),
         )
         return response
 
@@ -256,16 +312,17 @@ class SummaryView(APIView):
 
 
 class DashboardAPIView(APIView):
-    """
-    Returns the complete dashboard payload for the React frontend.
-    """
-
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        context = build_dashboard_context(request.user)
+        scope = request.query_params.get("scope", "all")
+        statement_id = request.query_params.get("statement")
+        context = build_dashboard_context(request.user, scope=scope, statement_id=statement_id)
 
         return Response({
+            "scope": scope,
+            "statement_id": context.get("statement_id"),
+            "statement_filename": context.get("statement_filename"),
             "month_label": context.get("month_label"),
             "transaction_count": context.get("transaction_count"),
             "uncategorized_count": context.get("uncategorized_count"),
@@ -298,4 +355,26 @@ class CurrentUserAPIView(APIView):
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
+        })
+class ChatMessageViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = ChatMessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ChatMessage.objects.filter(user=self.request.user).order_by("created_at")
+
+
+class ChatAskView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        question = (request.data.get("question") or "").strip()
+        if not question:
+            return Response({"error": "Question is required"}, status=400)
+
+        result = ask_and_save(request.user, question)
+        return Response({
+            "answer": result["answer"],
+            "sources": result["sources"],
+            "error": result["error"],
         })

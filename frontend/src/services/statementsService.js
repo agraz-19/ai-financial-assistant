@@ -42,6 +42,38 @@ export async function getStatementTransactions(statementId) {
   }
 }
 
+export async function getCategories() {
+  try {
+    const response = await api.get("categories/");
+    return Array.isArray(response.data) ? response.data : response.data.results || [];
+  } catch (error) {
+    console.error("[getCategories] Error:", error);
+    throw error;
+  }
+}
+
+export async function getTransactions({
+  page = 1,
+  pageSize = 20,
+  statementId,
+  categoryId,
+  dateFrom,
+  dateTo,
+} = {}) {
+  try {
+    const params = { page, page_size: pageSize };
+    if (statementId) params.statement = statementId;
+    if (categoryId) params.category = categoryId;
+    if (dateFrom) params.date_from = dateFrom;
+    if (dateTo) params.date_to = dateTo;
+
+    const response = await api.get("transactions/", { params });
+    return response.data;
+  } catch (error) {
+    console.error("[getTransactions] Error:", error);
+    throw error;
+  }
+}
 /**
  * Upload a statement file (CSV or PDF).
  * The backend processes synchronously and returns the statement

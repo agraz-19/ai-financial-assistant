@@ -12,22 +12,22 @@ export default function CountUp({
   useEffect(() => {
     const target = Number(value ?? 0);
     if (Number.isNaN(target)) {
-      setCurrent(0);
       return;
     }
 
     let start = performance.now();
+    let frameId = 0;
     const step = (timestamp) => {
       const progress = Math.min((timestamp - start) / duration, 1);
       setCurrent(Math.round(target * progress));
       if (progress < 1) {
-        window.requestAnimationFrame(step);
+        frameId = window.requestAnimationFrame(step);
       }
     };
 
-    window.requestAnimationFrame(step);
+    frameId = window.requestAnimationFrame(step);
     return () => {
-      setCurrent(target);
+      window.cancelAnimationFrame(frameId);
     };
   }, [value, duration]);
 

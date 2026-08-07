@@ -44,6 +44,8 @@ def process_uploaded_statement(statement, uploaded_file):
     Raises:
         Exception: Re-raises any exception after marking statement as FAILED
     """
+    warnings = []
+
     try:
         # Read file bytes for parsing
         file_bytes = uploaded_file.read()
@@ -59,9 +61,10 @@ def process_uploaded_statement(statement, uploaded_file):
         # Parse file
         try:
             if file_type == Statement.FileType.CSV:
-                parsed, warnings = parse_csv_statement(BytesIO(file_bytes))
+                parsed, parse_warnings = parse_csv_statement(BytesIO(file_bytes))
             else:
-                parsed, warnings = parse_pdf_statement(BytesIO(file_bytes))
+                parsed, parse_warnings = parse_pdf_statement(BytesIO(file_bytes))
+            warnings.extend(parse_warnings)
         except CSVParseError as e:
             raise Exception(f"CSV parsing failed: {e}")
         except PDFParseError as e:
@@ -91,23 +94,35 @@ def process_uploaded_statement(statement, uploaded_file):
         try:
             categorized_count = run_categorization_for_statement(statement)
         except Exception as e:
-            print(f"[process_uploaded_statement] Categorization warning: {e}")
+            categorized_count = 0
+            warning = f"Categorization failed: {e}"
+            warnings.append(warning)
+            print(f"[process_uploaded_statement] {warning}")
         
-        # Generate embeddings (non-blocking, errors logged but don't fail upload)
+        # Generate embeddings separately so Chroma/model failures never roll
+        # back the parsed transaction data that has already been saved.
         try:
             embedded_count = embed_transactions_for_statement(statement)
         except Exception as e:
-            print(f"[process_uploaded_statement] Embedding warning: {e}")
+            embedded_count = 0
+            warning = f"Embedding failed: {e}"
+            warnings.append(warning)
+            print(f"[process_uploaded_statement] {warning}")
         
         # Refresh dashboard insights (non-blocking, errors logged but don't fail upload)
         try:
             refresh_after_new_data(statement.user, statement)
         except Exception as e:
-            print(f"[process_uploaded_statement] Dashboard refresh warning: {e}")
+            warning = f"Dashboard refresh failed: {e}"
+            warnings.append(warning)
+            print(f"[process_uploaded_statement] {warning}")
         
         return {
             'status': 'COMPLETED',
             'transaction_count': transaction_count,
+            'categorized_count': categorized_count,
+            'embedded_count': embedded_count,
+            'warnings': warnings,
             'error_message': None,
         }
     

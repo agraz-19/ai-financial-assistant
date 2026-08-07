@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import UploadHero from "../components/statements/UploadHero";
 import UploadDropzone from "../components/statements/UploadDropzone";
@@ -17,13 +17,9 @@ export default function Statements() {
   const [isUploading, setIsUploading] = useState(false);
   const [showUploadDropzone, setShowUploadDropzone] = useState(false);
   const [error, setError] = useState(null);
+  const [warnings, setWarnings] = useState([]);
 
-  // Fetch statements on mount
-  useEffect(() => {
-    loadStatements();
-  }, []);
-
-  const loadStatements = async () => {
+  const loadStatements = useCallback(async () => {
     try {
       setIsLoading(true);
       const data = await getStatements();
@@ -36,13 +32,23 @@ export default function Statements() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Fetch statements on mount
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      void loadStatements();
+    }, 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [loadStatements]);
 
   // Handle file selection and upload
   const handleFileSelect = async (file) => {
     try {
       setIsUploading(true);
       setError(null);
+      setWarnings([]);
 
       // Upload file to backend.
       // Backend processes synchronously and returns status COMPLETED or FAILED.
@@ -50,6 +56,14 @@ export default function Statements() {
 
       // Add to statements list immediately (status reflects DB state)
       setStatements([newStatement, ...statements]);
+      // Hide "skipped row" warnings (e.g. footer disclaimer text in PhonePe
+      // statements that the parser correctly identifies as non-transaction rows).
+      // Legitimate warnings (categorization/embedding failures) still display.
+      setWarnings(
+        Array.isArray(newStatement.warnings)
+          ? newStatement.warnings.filter((w) => !w.toLowerCase().includes("skipped"))
+          : []
+      );
 
       // Hide upload area immediately — no fake timers/animations.
       setIsUploading(false);
@@ -60,6 +74,7 @@ export default function Statements() {
     } catch (err) {
       console.error("[handleFileSelect] Error:", err);
       setError(err.response?.data?.detail || err.message || "Failed to upload statement");
+      setWarnings([]);
       setIsUploading(false);
     }
   };
@@ -103,9 +118,22 @@ export default function Statements() {
       )}
 
       {error && (
+      <div className="px-4 md:px-8 py-4 max-w-6xl mx-auto">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          {error}
+        </div>
+      </div>
+    )}
+
+      {warnings.length > 0 && (
         <div className="px-4 md:px-8 py-4 max-w-6xl mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-            {error}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800">
+            <p className="font-semibold mb-2">Upload completed with warnings</p>
+            <ul className="list-disc pl-5 space-y-1 text-sm">
+              {warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
           </div>
         </div>
       )}
@@ -118,6 +146,8 @@ export default function Statements() {
         ) : statements.length > 0 ? (
           <StatementHistory
             statements={statements}
+            loading={isLoading}
+            error={error}
             onViewStatement={handleViewStatement}
             onDeleteStatement={handleDeleteStatement}
           />
