@@ -10,14 +10,16 @@ function MessageBubble({ role, content }) {
       <div className={`flex max-w-[75%] items-start gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
         <div
           className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-            isUser ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-700"
+            isUser ? "bg-blue-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
           }`}
         >
           {isUser ? <UserIcon size={16} /> : <Bot size={16} />}
         </div>
         <div
           className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
-            isUser ? "bg-blue-600 text-white" : "bg-white border border-slate-200 text-slate-800"
+            isUser
+              ? "bg-blue-600 text-white"
+              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100"
           }`}
         >
           {content}
@@ -81,22 +83,22 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col rounded-3xl border border-slate-200 bg-slate-50 shadow-sm">
-      <div className="border-b border-slate-200 bg-white px-6 py-5 rounded-t-3xl">
-        <h1 className="text-xl font-bold text-slate-900">AI Assistant</h1>
-        <p className="text-sm text-slate-500">
+    <div className="flex h-[calc(100vh-8rem)] flex-col rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 shadow-sm">
+      <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-5 rounded-t-3xl">
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white">AI Assistant</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           Ask anything about your spending — scoped to your most recently uploaded statement.
         </p>
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-6 py-6">
         {loading ? (
-          <div className="flex items-center justify-center py-10 text-slate-500">
+          <div className="flex items-center justify-center py-10 text-slate-500 dark:text-slate-400">
             <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
             Loading chat history...
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-center text-slate-500">
+          <div className="flex h-full items-center justify-center text-center text-slate-500 dark:text-slate-400">
             <p>Ask a question like &quot;How much did I spend on food this month?&quot;</p>
           </div>
         ) : (
@@ -106,10 +108,10 @@ export default function Chat() {
         {sending && (
           <div className="flex justify-start">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-slate-700">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                 <Bot size={16} />
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
                 Thinking...
               </div>
             </div>
@@ -118,19 +120,19 @@ export default function Chat() {
       </div>
 
       {error && (
-        <div className="mx-6 mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="mx-6 mb-3 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-4 py-2 text-sm text-red-700 dark:text-red-400">
           {error}
         </div>
       )}
 
-      <form onSubmit={handleSend} className="flex items-center gap-3 border-t border-slate-200 bg-white px-6 py-4 rounded-b-3xl">
+      <form onSubmit={handleSend} className="flex items-center gap-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-4 rounded-b-3xl">
         <input
           type="text"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="Ask a question..."
           disabled={sending}
-          className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+          className="flex-1 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
         />
         <button
           type="submit"

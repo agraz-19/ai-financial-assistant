@@ -21,6 +21,23 @@ DASHBOARD_CACHE_TTL = 60 * 15  # 15 minutes
 
 MERCHANT_PREFIX_PATTERN = re.compile(r"^(paid to|received from|sent to)\s+", re.IGNORECASE)
 
+def _compute_health_score(total_spending, monthly_income, savings, uncategorized_count, transaction_count) -> int:
+    """
+    Lightweight, explainable 0-100 score -- not a real credit-style model.
+    Rewards a healthy savings rate, penalizes negative savings and a high
+    proportion of uncategorized transactions (signals messy/incomplete data).
+    """
+    if monthly_income <= 0:
+        return 0 if total_spending > 0 else 50
+
+    savings_rate = savings / monthly_income  # can be negative
+    score = 50 + (savings_rate * 200)  # ~25% savings rate -> 100
+
+    if transaction_count:
+        uncategorized_ratio = uncategorized_count / transaction_count
+        score -= uncategorized_ratio * 15
+
+    return int(round(max(0, min(100, score))))
 
 def _money(value: float | Decimal | int) -> str:
     return f"Rs. {float(value):,.2f}"
@@ -254,6 +271,11 @@ def _empty_dashboard_context() -> dict:
         "total_spending": 0.0,
         "monthly_income": 0.0,
         "savings": 0.0,
+        "health_score": 0,
+        "income_change": None,
+        "expense_change": None,
+        "savings_change": None,
+        "comparison_label": None,
         "highest_expense_category": "None",
         "spending_per_category": [],
         "summary_text": "",
@@ -411,7 +433,14 @@ def _build_dashboard_context_uncached(user, scope: str, statement: Statement | N
         for txn in transactions[:10]
     ]
     uncategorized_count = transactions.filter(category__isnull=True).count()
-
+    health_score = _compute_health_score(
+        summary["total_spending"],
+        summary["monthly_income"],
+        summary["savings"],
+        uncategorized_count,
+        transactions.count(),
+    )
+    period_deltas = _compute_period_deltas(transactions)
     first_date = transactions.order_by("date").first()
     last_date = transactions.order_by("-date").first()
     date_range = (
@@ -438,13 +467,59 @@ def _build_dashboard_context_uncached(user, scope: str, statement: Statement | N
         "ai_budget_advice": ai_budget_advice,
         "ai_recommendations": ai_recommendations,
         "recent_transactions": recent_transactions,
+        "health_score": health_score,
         "show_upload_prompt": transactions.count() == 0,
         "largest_expense": analytics["largest_expense"],
         "most_frequent_merchant": analytics["most_frequent_merchant"],
         "monthly_trend": analytics["monthly_trend"],
+        "income_change": period_deltas["income_change"],
+        "expense_change": period_deltas["expense_change"],
+        "savings_change": period_deltas["savings_change"],
+        "comparison_label": period_deltas["comparison_label"],
         "predicted_next_month_spend": analytics["predicted_next_month_spend"],
     }
+def _compute_period_deltas(transactions_qs) -> dict:
+    """
+    Compares the most recent calendar month present in this transaction set
+    against the one before it. Works for both scopes (statement or all-time)
+    since it's just grouping whatever transactions were passed in. Returns
+    None deltas if there isn't a second month to compare against, and labels
+    the comparison honestly if the two months aren't calendar-adjacent.
+    """
+    frame = _build_dataframe(transactions_qs)
+    if frame.empty:
+        return {"income_change": None, "expense_change": None, "savings_change": None, "comparison_label": None}
 
+    frame["month_period"] = frame["date"].dt.to_period("M")
+    months = sorted(frame["month_period"].unique())
+    if len(months) < 2:
+        return {"income_change": None, "expense_change": None, "savings_change": None, "comparison_label": None}
+
+    current_month, previous_month = months[-1], months[-2]
+    gap = (current_month - previous_month).n
+
+    def _totals(period):
+        subset = frame[frame["month_period"] == period]
+        income = float(subset[subset["amount"] > 0]["amount"].sum())
+        expense = float(-subset[subset["amount"] < 0]["amount"].sum())
+        return income, expense, income - expense
+
+    cur_income, cur_expense, cur_savings = _totals(current_month)
+    prev_income, prev_expense, prev_savings = _totals(previous_month)
+
+    def _pct_change(current, previous):
+        if previous == 0:
+            return None
+        return round(((current - previous) / abs(previous)) * 100, 1)
+
+    label = "vs last month" if gap == 1 else f"vs {previous_month.strftime('%b %Y')}"
+
+    return {
+        "income_change": _pct_change(cur_income, prev_income),
+        "expense_change": _pct_change(cur_expense, prev_expense),
+        "savings_change": _pct_change(cur_savings, prev_savings),
+        "comparison_label": label,
+    }
 
 def _dashboard_cache_key(user, scope: str, statement: Statement | None) -> str:
     if scope == "statement" and statement is not None:

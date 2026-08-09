@@ -90,7 +90,7 @@ export default function StatementDetail() {
 
   if (error) {
     return (
-      <div className="p-10 text-red-500">
+      <div className="p-10 text-red-500 dark:text-red-400">
         {error}
       </div>
     );
@@ -103,13 +103,13 @@ export default function StatementDetail() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate("/statements")}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
           >
             <ArrowLeft size={18} />
             Back to Statements
           </button>
 
-          <h1 className="text-3xl font-bold text-slate-800">
+          <h1 className="text-3xl font-bold text-slate-800 dark:text-white">
             Statement Details
           </h1>
         </div>
@@ -124,14 +124,14 @@ export default function StatementDetail() {
       </div>
 
       {/* Statement Info Card */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-8">
         <div className="flex items-center gap-4 mb-6">
           <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white">
             <Smartphone size={28} />
           </div>
           <div>
-            <p className="text-sm text-slate-500">{getProvider(statement?.filename)}</p>
-            <h2 className="text-xl font-semibold text-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">{getProvider(statement?.filename)}</p>
+            <h2 className="text-xl font-semibold text-slate-800 dark:text-white">
               {statement?.filename?.replace(/\.[^/.]+$/, "") || "Statement"}
             </h2>
           </div>
@@ -139,29 +139,29 @@ export default function StatementDetail() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <div>
-            <p className="text-sm text-slate-500">Status</p>
-            <p className="text-base font-semibold text-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Status</p>
+            <p className="text-base font-semibold text-slate-800 dark:text-white">
               {status === "COMPLETED" && (
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm font-medium">
-                  <span className="w-2 h-2 rounded-full bg-green-600" />
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-400 text-sm font-medium">
+                  <span className="w-2 h-2 rounded-full bg-green-600 dark:bg-green-400" />
                   Completed
                 </span>
               )}
               {status === "FAILED" && (
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-100 text-red-700 text-sm font-medium">
-                  <span className="w-2 h-2 rounded-full bg-red-600" />
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 text-sm font-medium">
+                  <span className="w-2 h-2 rounded-full bg-red-600 dark:bg-red-400" />
                   Failed
                 </span>
               )}
               {status === "PROCESSING" && (
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-100 text-yellow-700 text-sm font-medium">
-                  <span className="w-2 h-2 rounded-full bg-yellow-600 animate-pulse" />
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 text-sm font-medium">
+                  <span className="w-2 h-2 rounded-full bg-yellow-600 dark:bg-yellow-400 animate-pulse" />
                   Processing
                 </span>
               )}
               {status === "UPLOADED" && (
-                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-sm font-medium">
-                  <span className="w-2 h-2 rounded-full bg-blue-600" />
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-sm font-medium">
+                  <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400" />
                   Uploaded
                 </span>
               )}
@@ -169,70 +169,70 @@ export default function StatementDetail() {
           </div>
 
           <div>
-            <p className="text-sm text-slate-500">Upload Date</p>
-            <p className="text-base font-semibold text-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Upload Date</p>
+            <p className="text-base font-semibold text-slate-800 dark:text-white">
               {formatDate(statement?.uploaded_at)}
             </p>
           </div>
 
           <div>
-            <p className="text-sm text-slate-500">Processed At</p>
-            <p className="text-base font-semibold text-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Processed At</p>
+            <p className="text-base font-semibold text-slate-800 dark:text-white">
               {formatDate(statement?.processed_at)}
             </p>
           </div>
 
           <div>
-            <p className="text-sm text-slate-500">Transactions</p>
-            <p className="text-base font-semibold text-slate-800">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Transactions</p>
+            <p className="text-base font-semibold text-slate-800 dark:text-white">
               {statement?.transaction_count || 0}
             </p>
           </div>
         </div>
 
         {statement?.error_message && (
-          <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+          <div className="mt-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl text-red-700 dark:text-red-400 text-sm">
             {statement.error_message}
           </div>
         )}
       </div>
 
       {/* Transactions Table */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
-        <h2 className="text-2xl font-bold text-slate-800 mb-6">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-8">
+        <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6">
           Transactions ({transactions.length})
         </h2>
 
         {transactions.length === 0 ? (
-          <div className="text-center py-12 bg-slate-50 rounded-2xl">
-            <p className="text-slate-500">No transactions found for this statement</p>
+          <div className="text-center py-12 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
+            <p className="text-slate-500 dark:text-slate-400">No transactions found for this statement</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="py-3 px-4 text-sm font-semibold text-slate-500">Date</th>
-                  <th className="py-3 px-4 text-sm font-semibold text-slate-500">Description</th>
-                  <th className="py-3 px-4 text-sm font-semibold text-slate-500">Category</th>
-                  <th className="py-3 px-4 text-sm font-semibold text-slate-500 text-right">Amount</th>
+                <tr className="border-b border-slate-200 dark:border-slate-800">
+                  <th className="py-3 px-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Date</th>
+                  <th className="py-3 px-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Description</th>
+                  <th className="py-3 px-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Category</th>
+                  <th className="py-3 px-4 text-sm font-semibold text-slate-500 dark:text-slate-400 text-right">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.map((txn) => (
-                  <tr key={txn.id} className="border-b border-slate-100 hover:bg-slate-50">
-                    <td className="py-3 px-4 text-slate-700">
+                  <tr key={txn.id} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
                       {formatDate(txn.date)}
                     </td>
-                    <td className="py-3 px-4 text-slate-700">
+                    <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
                       {txn.description}
                     </td>
                     <td className="py-3 px-4">
-                      <span className="inline-flex px-2 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
+                      <span className="inline-flex px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium">
                         {txn.category_name || "Uncategorized"}
                       </span>
                     </td>
-                    <td className={`py-3 px-4 text-right font-semibold ${Number(txn.amount) < 0 ? "text-red-600" : "text-green-600"}`}>
+                    <td className={`py-3 px-4 text-right font-semibold ${Number(txn.amount) < 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
                       {formatAmount(txn.amount)}
                     </td>
                   </tr>

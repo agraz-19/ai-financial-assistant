@@ -8,7 +8,16 @@ import {
 import CountUp from "../common/CountUp";
 import KPICard from "./KPICard";
 
+function formatChange(value) {
+  if (value === null || value === undefined) return "No prior data";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value}%`;
+}
+
 export default function OverviewCards({ data }) {
+  const healthScore = data?.health_score;
+  const comparisonLabel = data?.comparison_label;
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
       <KPICard
@@ -21,9 +30,10 @@ export default function OverviewCards({ data }) {
           />
         }
         icon={<IndianRupee size={26} />}
-        change="+12.4%"
-        trend="up"
+        change={formatChange(data?.income_change)}
+        trend={(data?.income_change ?? 0) >= 0 ? "up" : "down"}
         color="green"
+        comparisonLabel={comparisonLabel}
       />
 
       <KPICard
@@ -36,9 +46,11 @@ export default function OverviewCards({ data }) {
           />
         }
         icon={<Wallet size={26} />}
-        change="-4.8%"
-        trend="down"
+        change={formatChange(data?.expense_change)}
+        // for expenses, a decrease is the good direction
+        trend={(data?.expense_change ?? 0) <= 0 ? "up" : "down"}
         color="red"
+        comparisonLabel={comparisonLabel}
       />
 
       <KPICard
@@ -51,18 +63,23 @@ export default function OverviewCards({ data }) {
           />
         }
         icon={<PiggyBank size={26} />}
-        change="+8.1%"
-        trend="up"
+        change={formatChange(data?.savings_change)}
+        trend={(data?.savings_change ?? 0) >= 0 ? "up" : "down"}
         color="blue"
+        comparisonLabel={comparisonLabel}
       />
 
       <KPICard
         title="AI Health Score"
-        value="87 / 100"
+        value={`${healthScore ?? "--"} / 100`}
         icon={<ShieldCheck size={26} />}
-        change="+6 pts"
-        trend="up"
+        change={
+          healthScore >= 70 ? "Healthy" :
+          healthScore >= 40 ? "Fair" : "Needs attention"
+        }
+        trend={healthScore >= 50 ? "up" : "down"}
         color="purple"
+        comparisonLabel="AI-generated score"
       />
     </div>
   );

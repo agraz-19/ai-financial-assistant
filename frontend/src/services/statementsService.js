@@ -109,6 +109,36 @@ export async function deleteStatement(statementId) {
   }
 }
 
+export async function createCategory(name) {
+  try {
+    const response = await api.post("categories/", { name });
+    return response.data;
+  } catch (error) {
+    console.error("[createCategory] Error:", error);
+    throw error;
+  }
+}
+
+export async function updateCategory(id, name) {
+  try {
+    const response = await api.patch(`categories/${id}/`, { name });
+    return response.data;
+  } catch (error) {
+    console.error("[updateCategory] Error:", error);
+    throw error;
+  }
+}
+
+export async function deleteCategory(id) {
+  try {
+    await api.delete(`categories/${id}/`);
+    return { success: true };
+  } catch (error) {
+    console.error("[deleteCategory] Error:", error);
+    throw error;
+  }
+}
+
 /**
  * Download the original uploaded statement file.
  */

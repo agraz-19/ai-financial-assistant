@@ -70,8 +70,13 @@ export function AuthProvider({ children }) {
     setUser(currentUser);
     return currentUser;
   };
+  const refreshUser = async () => {
+    const currentUser = await fetchCurrentUser().catch(() => null);
+    setUser(currentUser);
+    return currentUser;
+  };
 
-  const logout = () => {
+    const logout = () => {
     clearSession();
     setUser(null);
   };
@@ -81,8 +86,11 @@ export function AuthProvider({ children }) {
     loading,
     login,
     logout,
+    refreshUser,
     isAuthenticated: Boolean(user || getAccessToken() || getRefreshToken()),
   };
+
+
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

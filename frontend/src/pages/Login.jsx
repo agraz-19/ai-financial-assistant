@@ -89,7 +89,7 @@ export default function Login() {
                 <p className="text-sm uppercase tracking-[0.28em] text-cyan-200/80">
                   Secure access
                 </p>
-                <h1 className="text-2xl font-semibold">UPI Finance Tracker</h1>
+                <h1 className="text-2xl font-semibold">AI Financial Assistant</h1>
               </div>
             </div>
 

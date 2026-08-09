@@ -25,4 +25,9 @@ urlpatterns = [
         views.StatementDownloadView.as_view(),
         name="statement-download",
     ),
+    path("api/analytics/", views.AnalyticsAPIView.as_view(), name="api-analytics"),
+    path("api/me/", views.CurrentUserAPIView.as_view(), name="api-me"),  # unchanged, now also supports PATCH
+    path("api/me/password/", views.ChangePasswordView.as_view(), name="change-password"),
+    path("api/me/export/", views.ExportTransactionsCSVView.as_view(), name="export-transactions"),
+    path("api/me/delete/", views.DeleteAccountView.as_view(), name="delete-account"),
 ]
