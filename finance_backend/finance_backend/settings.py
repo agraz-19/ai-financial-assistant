@@ -143,6 +143,9 @@ FRONTEND_DIST_DIR = BASE_DIR / "frontend_dist"
 WHITENOISE_ROOT = FRONTEND_DIST_DIR
 # add near STATIC_ROOT
 STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
