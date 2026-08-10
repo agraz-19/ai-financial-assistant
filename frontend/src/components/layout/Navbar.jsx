@@ -1,10 +1,10 @@
-import { LogOut, Plus, Moon, Sun } from "lucide-react";
+import { LogOut, Plus, Moon, Sun, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../context/useAuth";
 import { useTheme } from "../../context/ThemeContext";
 
-export default function Navbar() {
+export default function Navbar({ onMenuClick }) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -17,14 +17,30 @@ export default function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-40 h-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-8">
-      <div className="flex items-center gap-4 ml-auto">
+    <header className="sticky top-0 z-30 h-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 sm:px-8">
+      <button
+        onClick={onMenuClick}
+        aria-label="Open menu"
+        className="lg:hidden w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center justify-center transition text-slate-700 dark:text-slate-200"
+      >
+        <Menu size={20} />
+      </button>
+
+      <div className="flex items-center gap-2 sm:gap-4 ml-auto">
         <button
           onClick={() => navigate("/statements")}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 transition"
+          className="hidden sm:flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 transition"
         >
           <Plus size={18} />
           Upload Statement
+        </button>
+
+        <button
+          onClick={() => navigate("/statements")}
+          aria-label="Upload statement"
+          className="sm:hidden w-11 h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition"
+        >
+          <Plus size={20} />
         </button>
 
         <button
@@ -46,7 +62,7 @@ export default function Navbar() {
 
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-slate-700 dark:text-slate-200 transition hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800"
+          className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 px-3 sm:px-4 py-2.5 text-slate-700 dark:text-slate-200 transition hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800"
         >
           <LogOut size={18} />
           <span className="hidden md:inline">Logout</span>
