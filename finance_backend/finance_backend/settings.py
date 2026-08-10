@@ -45,6 +45,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -138,6 +139,12 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+# add near STATIC_ROOT
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -168,8 +175,11 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 # React Frontend
 
+# CORS fix — support multiple origins, comma-separated
 CORS_ALLOWED_ORIGINS = [
-    os.getenv("FRONTEND_URL", "http://localhost:5173"),
+    origin.strip()
+    for origin in os.getenv("FRONTEND_URL", "http://localhost:5173").split(",")
+    if origin.strip()
 ]
 
 CORS_ALLOW_CREDENTIALS = True
