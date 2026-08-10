@@ -7,6 +7,7 @@ import {
   PiggyBank,
   Bot,
   ArrowRight,
+  User,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -33,7 +34,7 @@ export default function AIHero({ data }) {
           <Sparkles size={26} />
         </div>
         <div>
-          <h1 className="text-4xl font-bold">Welcome back, Agraz 👋</h1>
+          <h1 className="text-4xl font-bold">Welcome back, {User.first_name} 👋</h1>
           <p className="text-blue-100 mt-2 text-lg">
             You saved ₹{savings.toLocaleString("en-IN")} this month.
           </p>
