@@ -48,4 +48,4 @@ EXPOSE 8000
 # For local dev, runserver is fine (matches what you already use).
 # For production later (Render), this would change to gunicorn instead --
 # we'll cross that bridge in Week 3.
-CMD ["sh", "-c", "python manage.py collectstatic --noinput && python manage.py migrate && (python manage.py createsuperuser --noinput || true) && gunicorn finance_backend.wsgi:application --bind 0.0.0.0:$PORT"]
+CMD ["sh", "-c", "python manage.py collectstatic --noinput && python manage.py migrate && (python manage.py createsuperuser --noinput || true) && gunicorn finance_backend.wsgi:application --bind 0.0.0.0:$PORT --timeout 120"]
