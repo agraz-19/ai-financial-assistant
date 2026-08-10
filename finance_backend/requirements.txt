@@ -1,5 +1,4 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
+
 Django
 djangorestframework
 psycopg2-binary
@@ -8,7 +7,7 @@ pandas
 google-genai
 openai
 chromadb 
-sentence-transformers
+
 django-redis
 psycopg2-binary
 pdfplumber

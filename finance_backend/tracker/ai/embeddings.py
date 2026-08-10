@@ -1,9 +1,15 @@
 """
 Embedding generation and ChromaDB storage/retrieval for transactions.
 
-Uses sentence-transformers (runs fully locally, no API key, no rate limits)
-to generate embeddings, and a persistent ChromaDB collection to store and
-search them.
+Uses Google's Gemini embedding API (via the google-genai SDK) to generate
+embeddings, and a persistent ChromaDB collection to store and search them.
+
+This deliberately avoids sentence-transformers/torch: running a local
+embedding model needs 1-2GB+ RAM just to import torch, which OOM-kills the
+app on memory-constrained hosts (e.g. Render's free/starter tiers). Calling
+Gemini's embedding API instead means the heavy lifting happens on Google's
+side -- our process only sends text and gets back a vector, no local model
+weights loaded at all.
 
 Design decisions:
 - We embed DESCRIPTION + CATEGORY only, not amount (see build_embedding_text).
@@ -15,37 +21,65 @@ Design decisions:
   uploads (e.g. test/fake data mixing with real data).
 """
 
+import os
 import threading
 
-import chromadb
 from django.conf import settings
-from sentence_transformers import SentenceTransformer
 
-_model = None
-_model_lock = threading.Lock()
+_genai_client = None
+_client_lock = threading.Lock()
 _chroma_client = None
 _collection = None
 
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
-COLLECTION_NAME = "transactions"
+EMBEDDING_MODEL_NAME = "gemini-embedding-001"
+EMBEDDING_DIMENSION = 768
+
+# Renamed from "transactions" -- the old collection held 384-dim vectors
+# from the local sentence-transformers model. ChromaDB collections require
+# a fixed dimension, so switching embedding providers needs a fresh
+# collection rather than upserting mismatched-dimension vectors.
+COLLECTION_NAME = "transactions_gemini"
 
 
-def _get_model() -> SentenceTransformer:
-    global _model
-    if _model is None:
-        with _model_lock:
-            if _model is None:
-                _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-    return _model
+def _get_genai_client():
+    global _genai_client
+    if _genai_client is None:
+        with _client_lock:
+            if _genai_client is None:
+                from google import genai
+                api_key = os.getenv("GEMINI_API_KEY")
+                if not api_key:
+                    raise RuntimeError("GEMINI_API_KEY is not configured")
+                _genai_client = genai.Client(api_key=api_key)
+    return _genai_client
 
 
 def _get_collection():
     global _chroma_client, _collection
     if _collection is None:
+        import chromadb
         persist_dir = str(settings.BASE_DIR / "chroma_data")
         _chroma_client = chromadb.PersistentClient(path=persist_dir)
         _collection = _chroma_client.get_or_create_collection(name=COLLECTION_NAME)
     return _collection
+
+
+def _embed_texts(texts: list[str], task_type: str) -> list[list[float]]:
+    if not texts:
+        return []
+
+    client = _get_genai_client()
+    from google.genai import types
+
+    result = client.models.embed_content(
+        model=EMBEDDING_MODEL_NAME,
+        contents=texts,
+        config=types.EmbedContentConfig(
+            task_type=task_type,
+            output_dimensionality=EMBEDDING_DIMENSION,
+        ),
+    )
+    return [embedding.values for embedding in result.embeddings]
 
 
 def build_embedding_text(transaction) -> str:
@@ -54,20 +88,18 @@ def build_embedding_text(transaction) -> str:
 
 
 def embed_and_store_transactions(transactions: list) -> int:
-    """
-    Embeds a batch of Transaction instances and upserts them into ChromaDB.
-    Each entry's metadata includes both user_id AND statement_id, so
-    retrieval can be scoped to a single upload.
-    """
     transactions = [t for t in transactions if t.category is not None]
     if not transactions:
         return 0
 
-    model = _get_model()
     collection = _get_collection()
-
     texts = [build_embedding_text(t) for t in transactions]
-    embeddings = model.encode(texts, show_progress_bar=False).tolist()
+
+    BATCH_SIZE = 100
+    embeddings: list[list[float]] = []
+    for start in range(0, len(texts), BATCH_SIZE):
+        chunk = texts[start:start + BATCH_SIZE]
+        embeddings.extend(_embed_texts(chunk, task_type="RETRIEVAL_DOCUMENT"))
 
     ids = [str(t.id) for t in transactions]
     metadatas = [
@@ -82,13 +114,7 @@ def embed_and_store_transactions(transactions: list) -> int:
         for t in transactions
     ]
 
-    collection.upsert(
-        ids=ids,
-        embeddings=embeddings,
-        documents=texts,
-        metadatas=metadatas,
-    )
-
+    collection.upsert(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
     return len(transactions)
 
 
@@ -98,29 +124,13 @@ def embed_transactions_for_statement(statement) -> int:
 
 
 def query_similar_transactions(user, statement, query_text: str, top_k: int = 5) -> list[dict]:
-    """
-    Embeds a natural-language question and returns the top_k most similar
-    transactions belonging to the given user AND the given statement.
-
-    `statement` is required (not optional) -- retrieval is always scoped to
-    one specific upload, matching how the dashboard behaves. Pass in
-    tracker.services.insights.get_latest_statement(user) if you want "the
-    most recently uploaded statement," which is the current app-wide default.
-    """
-    model = _get_model()
     collection = _get_collection()
-
-    query_embedding = model.encode([query_text]).tolist()
+    query_embedding = _embed_texts([query_text], task_type="RETRIEVAL_QUERY")
 
     results = collection.query(
         query_embeddings=query_embedding,
         n_results=top_k,
-        where={
-            "$and": [
-                {"user_id": user.id},
-                {"statement_id": statement.id},
-            ]
-        },
+        where={"$and": [{"user_id": user.id}, {"statement_id": statement.id}]},
     )
 
     documents = results.get("documents", [[]])[0]
@@ -137,5 +147,4 @@ def query_similar_transactions(user, statement, query_text: str, top_k: int = 5)
             "transaction_id": meta.get("transaction_id"),
             "distance": dist,
         })
-
     return matches
