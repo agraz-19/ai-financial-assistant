@@ -95,22 +95,22 @@ export default function Login() {
 
             <div className="max-w-xl space-y-6">
               <p className="text-sm font-medium uppercase tracking-[0.35em] text-cyan-200/70">
-                JWT powered
+                Smart finance tracking
               </p>
               <h2 className="text-5xl font-semibold leading-tight text-white lg:text-6xl">
                 Sign in to your financial control center.
               </h2>
               <p className="max-w-lg text-base leading-7 text-slate-200/80">
-                Use your Django username and password to unlock the dashboard,
-                protected uploads, and the AI insights workspace.
+                Track your spending, get AI-powered insights, and stay on top
+                of your finances in one place.
               </p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
               {[
-                ["Encrypted", "Access tokens stay in the browser session."],
-                ["Protected", "Every API request requires authentication."],
-                ["Fast", "Refresh tokens keep you signed in smoothly."],
+                ["Secure", "Your data stays private and encrypted."],
+                ["Private", "Only you can see your financial data."],
+                ["Seamless", "Stay signed in without interruption."],
               ].map(([title, text]) => (
                 <div
                   key={title}
@@ -134,11 +134,10 @@ export default function Login() {
                 Welcome back
               </p>
               <h3 className="text-3xl font-semibold text-slate-950">
-                Log in with JWT
+                Sign in
               </h3>
               <p className="text-sm leading-6 text-slate-600">
-                Enter your credentials and we&apos;ll fetch a fresh access token
-                plus your profile.
+                Enter your username and password to continue.
               </p>
             </div>
 
@@ -208,12 +207,6 @@ export default function Login() {
                 <ArrowRight className="h-4 w-4" />
               </button>
             </form>
-
-            <div className="mt-8 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-              If you are testing locally, use an existing Django user account
-              with a real password. The API no longer falls back to a hidden
-              default user.
-            </div>
           </div>
         </section>
       </div>
