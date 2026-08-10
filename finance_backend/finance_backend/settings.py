@@ -139,6 +139,8 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+FRONTEND_DIST_DIR = BASE_DIR / "frontend_dist"
+WHITENOISE_ROOT = FRONTEND_DIST_DIR
 # add near STATIC_ROOT
 STORAGES = {
     "staticfiles": {

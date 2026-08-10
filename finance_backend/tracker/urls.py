@@ -9,10 +9,12 @@ router.register("statements", views.StatementViewSet, basename="statement")
 router.register("transactions", views.TransactionViewSet, basename="transaction")
 router.register("chat/messages", views.ChatMessageViewSet, basename="chat-message")
 
+
 urlpatterns = [
-    path("", views.HomeView.as_view(), name="home"),
+    path("legacy/", views.HomeView.as_view(), name="home"),
     path("upload/", views.upload_statement, name="upload_statement"),
     path("chat/", views.chat, name="chat"),
+    # ...rest unchanged
     path("api/session-jwt/", views.session_jwt, name="session-jwt"),
     path("auth/google/complete/", views.google_login_complete, name="google-login-complete"),
     path("api/summary/", views.SummaryView.as_view(), name="api-summary"),

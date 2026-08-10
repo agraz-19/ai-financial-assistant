@@ -498,3 +498,10 @@ class AnalyticsAPIView(APIView):
         month = request.query_params.get("month")
         context = build_month_analytics(request.user, month)
         return Response(context)
+
+def spa_index(request):
+    index_path = settings.BASE_DIR / "frontend_dist" / "index.html"
+    try:
+        return HttpResponse(index_path.read_text(encoding="utf-8"), content_type="text/html")
+    except FileNotFoundError:
+        return HttpResponse("Frontend build not found.", status=500)
