@@ -79,11 +79,7 @@ export async function fetchCurrentUser() {
 export function logout() {
   clearAuthTokens();
 }
-export async function registerAccount({ username, email, password }) {
-  const { data } = await authClient.post("register/", { username, email, password });
-  setAuthTokens({ access: data.access, refresh: data.refresh });
-  return data;
-}
+
 export async function registerAccount({ username, email, password }) {
   const { data } = await authClient.post("register/", {
     username,

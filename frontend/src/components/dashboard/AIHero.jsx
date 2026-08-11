@@ -16,7 +16,6 @@ export default function AIHero({ data }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const displayName = user?.first_name || user?.username || "there";
-  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const savings = Number(data?.savings ?? 0);
   const insightsCount = data?.ai_recommendations?.length ?? 0;
