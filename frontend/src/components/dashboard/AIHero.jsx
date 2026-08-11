@@ -19,6 +19,12 @@ export default function AIHero({ data }) {
   const insightsCount = data?.ai_recommendations?.length ?? 0;
   const hasData = Boolean(data?.month_label && data.month_label !== "No data yet");
   const displayName = user?.first_name || user?.username || "there";
+
+  // fix: negative savings shouldn't say "you saved"
+  const savingsLine = savings >= 0
+    ? `You saved ₹${savings.toLocaleString("en-IN")} this month.`
+    : `You spent ₹${Math.abs(savings).toLocaleString("en-IN")} more than you earned this month.`;
+
   const goToChat = (prefill) => {
     navigate("/chat", prefill ? { state: { prefill } } : undefined);
   };
@@ -35,10 +41,8 @@ export default function AIHero({ data }) {
           <Sparkles size={26} />
         </div>
         <div>
-          <h1 className="text-4xl font-bold">Welcome back,{displayName}👋</h1>
-          <p className="text-blue-100 mt-2 text-lg">
-            You saved ₹{savings.toLocaleString("en-IN")} this month.
-          </p>
+          <h1 className="text-4xl font-bold">Welcome back, {displayName} 👋</h1>
+          <p className="text-blue-100 mt-2 text-lg">{savingsLine}</p>
           <p className="text-blue-100 mt-1 text-sm">
             {insightsCount} new insight{insightsCount === 1 ? "" : "s"} available.
             {hasData ? "" : " Upload a statement to get started."}

@@ -43,7 +43,11 @@ export default function Statements() {
       setStatements([newStatement, ...statements]);
       setWarnings(
         Array.isArray(newStatement.warnings)
-          ? newStatement.warnings.filter((w) => !w.toLowerCase().includes("skipped"))
+          ? newStatement.warnings.filter(
+              (w) =>
+                !w.toLowerCase().includes("skipped") &&
+                !w.toLowerCase().includes("embedding failed")
+            )
           : []
       );
       setIsUploading(false);

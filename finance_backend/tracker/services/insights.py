@@ -479,13 +479,6 @@ def _build_dashboard_context_uncached(user, scope: str, statement: Statement | N
         "predicted_next_month_spend": analytics["predicted_next_month_spend"],
     }
 def _compute_period_deltas(transactions_qs) -> dict:
-    """
-    Compares the most recent calendar month present in this transaction set
-    against the one before it. Works for both scopes (statement or all-time)
-    since it's just grouping whatever transactions were passed in. Returns
-    None deltas if there isn't a second month to compare against, and labels
-    the comparison honestly if the two months aren't calendar-adjacent.
-    """
     frame = _build_dataframe(transactions_qs)
     if frame.empty:
         return {"income_change": None, "expense_change": None, "savings_change": None, "comparison_label": None}
@@ -511,14 +504,19 @@ def _compute_period_deltas(transactions_qs) -> dict:
         if previous == 0:
             return None
         if (current >= 0) != (previous >= 0):
-            return None  # crossed zero — % change meaningless, show "No prior data"
+            return None  # sign flip -- % is meaningless, caller falls back to absolute
         return round(((current - previous) / abs(previous)) * 100, 1)
+
     label = "vs last month" if gap == 1 else f"vs {previous_month.strftime('%b %Y')}"
 
     return {
         "income_change": _pct_change(cur_income, prev_income),
         "expense_change": _pct_change(cur_expense, prev_expense),
         "savings_change": _pct_change(cur_savings, prev_savings),
+        # NEW: raw rupee delta, always computable regardless of sign flips
+        "savings_delta": round(cur_savings - prev_savings, 2),
+        "income_delta": round(cur_income - prev_income, 2),
+        "expense_delta": round(cur_expense - prev_expense, 2),
         "comparison_label": label,
     }
 

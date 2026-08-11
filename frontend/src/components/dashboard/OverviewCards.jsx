@@ -8,10 +8,16 @@ import {
 import CountUp from "../common/CountUp";
 import KPICard from "./KPICard";
 
-function formatChange(value) {
-  if (value === null || value === undefined) return "No prior data";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${value}%`;
+function formatChange(pctValue, deltaValue) {
+  if (pctValue !== null && pctValue !== undefined) {
+    const sign = pctValue > 0 ? "+" : "";
+    return `${sign}${pctValue}%`;
+  }
+  if (deltaValue !== null && deltaValue !== undefined) {
+    const sign = deltaValue > 0 ? "+" : "";
+    return `${sign}₹${Math.abs(deltaValue).toLocaleString("en-IN")}`;
+  }
+  return "No prior data";
 }
 
 export default function OverviewCards({ data }) {
@@ -30,8 +36,8 @@ export default function OverviewCards({ data }) {
           />
         }
         icon={<IndianRupee size={26} />}
-        change={formatChange(data?.income_change)}
-        trend={(data?.income_change ?? 0) >= 0 ? "up" : "down"}
+        change={formatChange(data?.income_change, data?.income_delta)}
+        trend={(data?.income_delta ?? data?.income_change ?? 0) >= 0 ? "up" : "down"}
         color="green"
         comparisonLabel={comparisonLabel}
       />
@@ -46,9 +52,9 @@ export default function OverviewCards({ data }) {
           />
         }
         icon={<Wallet size={26} />}
-        change={formatChange(data?.expense_change)}
+        change={formatChange(data?.expense_change, data?.expense_delta)}
         // for expenses, a decrease is the good direction
-        trend={(data?.expense_change ?? 0) <= 0 ? "up" : "down"}
+        trend={(data?.expense_delta ?? data?.expense_change ?? 0) <= 0 ? "up" : "down"}
         color="red"
         comparisonLabel={comparisonLabel}
       />
@@ -63,8 +69,8 @@ export default function OverviewCards({ data }) {
           />
         }
         icon={<PiggyBank size={26} />}
-        change={formatChange(data?.savings_change)}
-        trend={(data?.savings_change ?? 0) >= 0 ? "up" : "down"}
+        change={formatChange(data?.savings_change, data?.savings_delta)}
+        trend={(data?.savings_delta ?? data?.savings_change ?? 0) >= 0 ? "up" : "down"}
         color="blue"
         comparisonLabel={comparisonLabel}
       />

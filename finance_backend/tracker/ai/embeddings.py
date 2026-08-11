@@ -87,6 +87,8 @@ def build_embedding_text(transaction) -> str:
     return f"{transaction.description} - {category_name}"
 
 
+import time
+
 def embed_and_store_transactions(transactions: list) -> int:
     transactions = [t for t in transactions if t.category is not None]
     if not transactions:
@@ -95,11 +97,14 @@ def embed_and_store_transactions(transactions: list) -> int:
     collection = _get_collection()
     texts = [build_embedding_text(t) for t in transactions]
 
-    BATCH_SIZE = 100
+    # Gemini free tier: 100 req/min for embed_content. Batch + sleep to stay under it.
+    BATCH_SIZE = 90
     embeddings: list[list[float]] = []
     for start in range(0, len(texts), BATCH_SIZE):
         chunk = texts[start:start + BATCH_SIZE]
         embeddings.extend(_embed_texts(chunk, task_type="RETRIEVAL_DOCUMENT"))
+        if start + BATCH_SIZE < len(texts):
+            time.sleep(65)  # wait out the per-minute window before next batch
 
     ids = [str(t.id) for t in transactions]
     metadatas = [
@@ -116,7 +121,6 @@ def embed_and_store_transactions(transactions: list) -> int:
 
     collection.upsert(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
     return len(transactions)
-
 
 def embed_transactions_for_statement(statement) -> int:
     transactions = list(statement.transactions.filter(category__isnull=False))

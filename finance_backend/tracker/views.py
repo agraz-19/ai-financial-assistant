@@ -354,6 +354,9 @@ class DashboardAPIView(APIView):
             "income_change": context.get("income_change"),
             "expense_change": context.get("expense_change"),
             "savings_change": context.get("savings_change"),
+            "savings_delta": context.get("savings_delta"),
+            "income_delta": context.get("income_delta"),
+            "expense_delta": context.get("expense_delta"),
             "comparison_label": context.get("comparison_label"),
         })
 
