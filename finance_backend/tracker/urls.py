@@ -1,6 +1,6 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
-
+from tracker.views import spa_index, health
 from . import views
 
 router = DefaultRouter()
@@ -11,6 +11,7 @@ router.register("chat/messages", views.ChatMessageViewSet, basename="chat-messag
 
 
 urlpatterns = [
+    path("health/", health, name="health"),
     path("legacy/", views.HomeView.as_view(), name="home"),
     path("upload/", views.upload_statement, name="upload_statement"),
     path("chat/", views.chat, name="chat"),
@@ -32,4 +33,5 @@ urlpatterns = [
     path("api/me/password/", views.ChangePasswordView.as_view(), name="change-password"),
     path("api/me/export/", views.ExportTransactionsCSVView.as_view(), name="export-transactions"),
     path("api/me/delete/", views.DeleteAccountView.as_view(), name="delete-account"),
+    path("api/register/", views.RegisterView.as_view(), name="register"),
 ]

@@ -199,3 +199,5 @@ ACCOUNT_SIGNUP_FIELDS = ["email*", "username*", "password1*", "password2*"]
 
 ACCOUNT_EMAIL_VERIFICATION = "none"
 SITE_ID = 1
+SOCIALACCOUNT_ADAPTER = "tracker.adapters.AutoSignupSocialAccountAdapter"
+SOCIALACCOUNT_AUTO_SIGNUP = True

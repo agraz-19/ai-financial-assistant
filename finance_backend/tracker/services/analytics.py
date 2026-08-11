@@ -223,3 +223,47 @@ def build_month_analytics(user, month_str: str | None) -> dict:
         "ai_recommendations": ai_output["recommendations"],
         "category_forecast": forecast,
     }
+def build_all_time_analytics(user) -> dict:
+    transactions = Transaction.objects.filter(user=user).select_related("category")
+    frame = _build_dataframe(transactions)
+    expense_frame = frame[frame["amount"] < 0].copy()
+    expense_frame["spend"] = expense_frame["amount"].abs()
+    total_spending = round(float(expense_frame["spend"].sum()), 2) if not expense_frame.empty else 0.0
+
+    if not frame.empty:
+        frame["month_period"] = frame["date"].dt.to_period("M")
+        monthly_totals = (frame[frame["amount"] < 0].assign(spend=lambda d: d["amount"].abs())
+                           .groupby("month_period")["spend"].sum())
+        monthly_average = round(float(monthly_totals.mean()), 2) if not monthly_totals.empty else 0.0
+    else:
+        monthly_average = 0.0
+
+    spending_per_category = (expense_frame.groupby("category", as_index=False)["spend"].sum()
+                              .sort_values("spend", ascending=False)
+                              if not expense_frame.empty else pd.DataFrame(columns=["category", "spend"]))
+    top_category = spending_per_category.iloc[0]["category"] if not spending_per_category.empty else "None"
+    category_breakdown = [
+        {"category": r["category"], "amount": round(float(r["spend"]), 2),
+         "percent": round(float(r["spend"]) / total_spending * 100, 1) if total_spending else 0.0}
+        for _, r in spending_per_category.iterrows()
+    ]
+    biggest_expenses = []
+    for txn in transactions.order_by("amount")[:10]:
+        if txn.amount >= 0: continue
+        biggest_expenses.append({"id": txn.id, "description": _normalize_merchant(txn.description) or txn.description,
+                                  "amount": round(float(abs(txn.amount)), 2), "date": txn.date,
+                                  "category": txn.category.name if txn.category else "Other"})
+
+    summary = build_monthly_financial_summary(transactions)
+    ai_output = generate_ai_insights(summary)
+    return {
+        "month": None, "available_months": get_available_months(user),
+        "total_spending": total_spending, "monthly_average": monthly_average,
+        "top_category": top_category, "transaction_count": transactions.count(),
+        "spending_per_category": category_breakdown, "category_trends": [], "daily_spending": [],
+        "biggest_expenses": biggest_expenses,
+        "ai_spending_summary": ai_output["spending_summary"],
+        "ai_budget_advice": ai_output["budget_advice"],
+        "ai_recommendations": ai_output["recommendations"],
+        "category_forecast": build_category_forecast(user),
+    }

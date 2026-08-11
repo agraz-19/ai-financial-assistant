@@ -63,7 +63,9 @@ export default function UploadDropzone({ onFileSelect, isUploading }) {
           <Cloud className="w-8 h-8 text-blue-600 dark:text-blue-400" />
         </motion.div>
         <h3 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Drag & Drop your Statement</h3>
-        <p className="text-slate-500 dark:text-slate-400 mb-6">or click to browse</p>
+        <p className="text-slate-500 dark:text-slate-400 mb-6">
+          or <span className="underline underline-offset-2">click to browse</span>
+        </p>
         <div className="flex flex-wrap gap-3 justify-center mb-6">
           {["PhonePe", "Google Pay", "Paytm", "CSV or PDF"].map((label) => (
             <span key={label} className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-medium">{label}</span>

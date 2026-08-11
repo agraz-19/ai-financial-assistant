@@ -1,31 +1,28 @@
 import { useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   LockKeyhole,
+  Mail,
   ShieldCheck,
   Sparkles,
   User,
 } from "lucide-react";
-import { Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { FaGoogle } from "react-icons/fa";
 
 import { useAuth } from "../context/useAuth";
-import { BACKEND_BASE_URL } from "../services/config";
+import { registerAccount } from "../services/authService";
+import { fetchCurrentUser } from "../services/authService";
 
-export default function Login() {
-  const { login, isAuthenticated, loading } = useAuth();
+export default function Register() {
+  const { isAuthenticated, loading, refreshUser } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  const fromPath = location.state?.from?.pathname || "/dashboard";
-  const googleLoginUrl = `${BACKEND_BASE_URL}accounts/google/login/?next=${encodeURIComponent(
-    `${BACKEND_BASE_URL}auth/google/complete/`
-  )}`;
 
   if (loading) {
     return (
@@ -43,25 +40,26 @@ export default function Login() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setSubmitting(true);
     setError("");
 
+    if (password !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      await login(username, password);
-      navigate(fromPath, { replace: true });
+      await registerAccount({ username, email, password });
+      await fetchCurrentUser().catch(() => null);
+      if (refreshUser) await refreshUser();
+      navigate("/dashboard", { replace: true });
     } catch (err) {
-      const message =
-        err.response?.data?.detail ||
-        err.response?.data?.non_field_errors?.[0] ||
-        "Unable to sign in. Check your username and password.";
+      const apiError = err.response?.data?.error;
+      const message = Array.isArray(apiError) ? apiError.join(" ") : apiError || "Unable to create account.";
       setError(message);
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleGoogleLogin = () => {
-    window.location.assign(googleLoginUrl);
   };
 
   return (
@@ -88,7 +86,7 @@ export default function Login() {
               </div>
               <div>
                 <p className="text-sm uppercase tracking-[0.28em] text-cyan-200/80">
-                  Secure access
+                  Get started
                 </p>
                 <h1 className="text-2xl font-semibold">AI Financial Assistant</h1>
               </div>
@@ -99,7 +97,7 @@ export default function Login() {
                 Smart finance tracking
               </p>
               <h2 className="text-5xl font-semibold leading-tight text-white lg:text-6xl">
-                Sign in to your financial control center.
+                Create your account and take control.
               </h2>
               <p className="max-w-lg text-base leading-7 text-slate-200/80">
                 Track your spending, get AI-powered insights, and stay on top
@@ -132,32 +130,14 @@ export default function Login() {
           <div className="w-full rounded-[2rem] border border-slate-200/10 bg-white p-8 text-slate-900 shadow-[0_30px_80px_rgba(2,6,23,0.35)] lg:p-10">
             <div className="mb-8 space-y-3">
               <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-700">
-                Welcome back
+                New here
               </p>
               <h3 className="text-3xl font-semibold text-slate-950">
-                Sign in
+                Create account
               </h3>
               <p className="text-sm leading-6 text-slate-600">
-                Enter your username and password to continue.
+                Set a username and password to get started.
               </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={submitting}
-              className="mb-5 flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100">
-                <FaGoogle className="h-4 w-4 text-slate-700" />
-              </span>
-              Continue with Google
-            </button>
-
-            <div className="mb-5 flex items-center gap-3 text-xs uppercase tracking-[0.28em] text-slate-400">
-              <span className="h-px flex-1 bg-slate-200" />
-              or use username and password
-              <span className="h-px flex-1 bg-slate-200" />
             </div>
 
             <form className="space-y-5" onSubmit={handleSubmit}>
@@ -178,6 +158,22 @@ export default function Login() {
               </label>
 
               <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Email</span>
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-cyan-400 focus-within:ring-4 focus-within:ring-cyan-100">
+                  <Mail className="h-5 w-5 text-slate-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    className="w-full bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    required
+                  />
+                </div>
+              </label>
+
+              <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-700">Password</span>
                 <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-cyan-400 focus-within:ring-4 focus-within:ring-cyan-100">
                   <LockKeyhole className="h-5 w-5 text-slate-400" />
@@ -187,7 +183,23 @@ export default function Login() {
                     onChange={(event) => setPassword(event.target.value)}
                     className="w-full bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
                     placeholder="password"
-                    autoComplete="current-password"
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">Confirm password</span>
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-cyan-400 focus-within:ring-4 focus-within:ring-cyan-100">
+                  <LockKeyhole className="h-5 w-5 text-slate-400" />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    className="w-full bg-transparent text-slate-900 outline-none placeholder:text-slate-400"
+                    placeholder="confirm password"
+                    autoComplete="new-password"
                     required
                   />
                 </div>
@@ -204,17 +216,18 @@ export default function Login() {
                 disabled={submitting}
                 className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? "Signing in..." : "Sign in"}
+                {submitting ? "Creating account..." : "Create account"}
                 <ArrowRight className="h-4 w-4" />
               </button>
             </form>
+
+            <p className="mt-6 text-center text-sm text-slate-600">
+              Already have an account?{" "}
+              <Link to="/login" className="font-semibold text-cyan-700 hover:text-cyan-800">
+                Sign in
+              </Link>
+            </p>
           </div>
-          <p className="mt-6 text-center text-sm text-slate-600">
-            New here?{" "}
-            <Link to="/register" className="font-semibold text-cyan-700 hover:text-cyan-800">
-              Create an account
-            </Link>
-          </p>
         </section>
       </div>
     </div>

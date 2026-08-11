@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Flame, TrendingUp, TrendingDown, Sparkles, Wallet, Target } from "lucide-react";
+import { ChevronLeft, ChevronRight, Flame, TrendingUp, TrendingDown, Sparkles, Wallet, Target, LayoutGrid, Calendar } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -16,6 +16,21 @@ function monthLabel(monthStr) {
   const [year, month] = monthStr.split("-");
   const date = new Date(Number(year), Number(month) - 1, 1);
   return date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
+function ScopeSelector({ scope, onScopeChange }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-2">
+      <button onClick={() => onScopeChange("month")} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${scope === "month" ? "bg-blue-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
+        <Calendar size={16} />
+        Monthly
+      </button>
+      <button onClick={() => onScopeChange("all")} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition ${scope === "all" ? "bg-blue-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
+        <LayoutGrid size={16} />
+        All Time
+      </button>
+    </div>
+  );
 }
 
 function SummaryCard({ label, value }) {
@@ -69,10 +84,10 @@ function CategoryBreakdown({ data, isDark }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
       <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-1">Category Breakdown</h2>
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Where your money went this month</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Where your money went</p>
 
       {chartData.length === 0 ? (
-        <p className="text-slate-500 dark:text-slate-400 text-sm py-10 text-center">No spending data for this month.</p>
+        <p className="text-slate-500 dark:text-slate-400 text-sm py-10 text-center">No spending data.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <ResponsiveContainer width="100%" height={260}>
@@ -136,7 +151,7 @@ function CategoryTrends({ data }) {
                       {Math.abs(item.change_percent)}%
                     </span>
                   ) : (
-                    <span className="text-slate-400 dark:text-slate-500">New</span>
+                    <span className="text-slate-400 dark:text-slate-500">No prior data</span>
                   )}
                 </div>
               </div>
@@ -188,7 +203,7 @@ function BiggestExpenses({ data }) {
         <Flame size={18} className="text-orange-500" />
         <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Biggest Expenses</h2>
       </div>
-      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Top spends this month</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Top spends</p>
 
       {data.length === 0 ? (
         <p className="text-slate-500 dark:text-slate-400 text-sm py-6 text-center">No expenses recorded.</p>
@@ -224,8 +239,8 @@ function AIInsight({ summary, advice, recommendations }) {
           <Sparkles size={22} />
         </div>
         <div>
-          <h2 className="text-xl font-bold">AI Monthly Insight</h2>
-          <p className="text-blue-100 text-sm mt-0.5">Generated from this month's spending</p>
+          <h2 className="text-xl font-bold">AI Insight</h2>
+          <p className="text-blue-100 text-sm mt-0.5">Generated from your spending</p>
         </div>
       </div>
 
@@ -249,7 +264,7 @@ function AIInsight({ summary, advice, recommendations }) {
           )}
         </div>
       ) : (
-        <p className="text-blue-100 text-sm">Not enough data yet to generate an insight for this month.</p>
+        <p className="text-blue-100 text-sm">Not enough data yet to generate an insight.</p>
       )}
     </div>
   );
@@ -340,24 +355,34 @@ function BudgetAndPrediction({ forecast, currentMonthLabel }) {
 export default function Analytics() {
   const [searchParams, setSearchParams] = useSearchParams();
   const monthParam = searchParams.get("month") || undefined;
+  const scope = searchParams.get("scope") === "all" ? "all" : "month";
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
-  const { analytics, loading, error } = useAnalytics(monthParam);
+  const { analytics, loading, error } = useAnalytics({ month: monthParam, scope });
   const [pendingMonth, setPendingMonth] = useState(monthParam);
 
   useEffect(() => {
-    if (analytics?.month && !monthParam) {
+    if (scope === "month" && analytics?.month && !monthParam) {
       const params = new URLSearchParams(searchParams);
       params.set("month", analytics.month);
       setSearchParams(params, { replace: true });
     }
-  }, [analytics, monthParam, searchParams, setSearchParams]);
+  }, [analytics, monthParam, scope, searchParams, setSearchParams]);
 
   const handleMonthChange = (nextMonth) => {
     setPendingMonth(nextMonth);
     const params = new URLSearchParams(searchParams);
     params.set("month", nextMonth);
+    setSearchParams(params);
+  };
+
+  const handleScopeChange = (nextScope) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("scope", nextScope);
+    if (nextScope === "all") {
+      params.delete("month");
+    }
     setSearchParams(params);
   };
 
@@ -373,10 +398,16 @@ export default function Analytics() {
     return <div className="p-10 text-red-500 dark:text-red-400">Failed to load analytics.</div>;
   }
 
-  if (!analytics?.available_months?.length) {
+  if (scope === "month" && !analytics?.available_months?.length) {
     return (
-      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-16 text-center">
-        <p className="text-slate-500 dark:text-slate-400">Upload a statement to see analytics here.</p>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Analytics</h1>
+          <ScopeSelector scope={scope} onScopeChange={handleScopeChange} />
+        </div>
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-16 text-center">
+          <p className="text-slate-500 dark:text-slate-400">Upload a statement to see analytics here.</p>
+        </div>
       </div>
     );
   }
@@ -385,11 +416,16 @@ export default function Analytics() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Analytics</h1>
-        <MonthSelector
-          availableMonths={analytics.available_months}
-          month={pendingMonth || analytics.month}
-          onChange={handleMonthChange}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <ScopeSelector scope={scope} onScopeChange={handleScopeChange} />
+          {scope === "month" && (
+            <MonthSelector
+              availableMonths={analytics.available_months}
+              month={pendingMonth || analytics.month}
+              onChange={handleMonthChange}
+            />
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -400,10 +436,10 @@ export default function Analytics() {
       </div>
 
       <CategoryBreakdown data={analytics.spending_per_category} isDark={isDark} />
-      <CategoryTrends data={analytics.category_trends} />
+      {scope === "month" && <CategoryTrends data={analytics.category_trends} />}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <DailySpending data={analytics.daily_spending} isDark={isDark} />
+        {scope === "month" && <DailySpending data={analytics.daily_spending} isDark={isDark} />}
         <BiggestExpenses data={analytics.biggest_expenses} />
       </div>
 
@@ -415,7 +451,7 @@ export default function Analytics() {
 
       <BudgetAndPrediction
         forecast={analytics.category_forecast}
-        currentMonthLabel={monthLabel(analytics.month)}
+        currentMonthLabel={scope === "month" ? monthLabel(analytics.month) : "All time"}
       />
     </div>
   );

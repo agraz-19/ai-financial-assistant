@@ -510,8 +510,9 @@ def _compute_period_deltas(transactions_qs) -> dict:
     def _pct_change(current, previous):
         if previous == 0:
             return None
+        if (current >= 0) != (previous >= 0):
+            return None  # crossed zero — % change meaningless, show "No prior data"
         return round(((current - previous) / abs(previous)) * 100, 1)
-
     label = "vs last month" if gap == 1 else f"vs {previous_month.strftime('%b %Y')}"
 
     return {

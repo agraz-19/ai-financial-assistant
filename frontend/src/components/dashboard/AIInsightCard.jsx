@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import {
   Brain,
   TrendingUp,
@@ -15,15 +16,20 @@ function truncate(value, length = 90) {
 }
 
 export default function AIInsightCard({ data }) {
+  const navigate = useNavigate();
   const recommendations = data?.ai_recommendations ?? [];
   const highestCategory = data?.highest_expense_category ?? "your top category";
   const highestCategoryAmount = data?.spending_per_category?.[0]?.amount;
   const formattedHighestCategoryAmount = highestCategoryAmount != null
     ? `₹${Number(highestCategoryAmount).toLocaleString("en-IN")}`
     : "—";
-  const savingsHint = data?.ai_budget_advice
+
+  // fix 3: heading is now a short fixed phrase, full advice text moved to paragraph below
+  const savingsHeading = `Reduce ${highestCategory.toLowerCase()} expenses.`;
+  const savingsDetail = data?.ai_budget_advice
     ? truncate(data.ai_budget_advice, 140)
-    : `Reduce ${highestCategory.toLowerCase()} expenses.`;
+    : truncate(recommendations[0], 140) || "Review your largest expense categories.";
+
   const topRecommendation = truncate(recommendations[0], 140) || "Review your largest expense categories.";
   const prediction = data?.predicted_next_month_spend
     ? `Estimated spend: ₹${Number(data.predicted_next_month_spend).toLocaleString("en-IN")}`
@@ -79,12 +85,13 @@ export default function AIInsightCard({ data }) {
             Savings Opportunity
           </p>
 
-          <h3 className="text-2xl font-bold mt-2">
-            {savingsHint}
+          {/* fix 3: short heading, full advice text now below in a paragraph with room */}
+          <h3 className="text-xl font-bold mt-2 leading-snug">
+            {savingsHeading}
           </h3>
 
-          <p className="mt-2 text-sm text-blue-100">
-            {topRecommendation}
+          <p className="mt-2 text-sm text-blue-100 leading-5">
+            {savingsDetail}
           </p>
         </div>
 
@@ -114,7 +121,11 @@ export default function AIInsightCard({ data }) {
           {detailSummary}
         </p>
 
-        <button className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/20">
+        {/* fix 4: wired onClick, navigates to /analytics */}
+        <button
+          onClick={() => navigate("/analytics")}
+          className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/20"
+        >
           View Details →
         </button>
       </div>

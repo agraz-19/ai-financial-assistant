@@ -5,6 +5,7 @@ import Layout from "./components/layout/Layout";
 
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import Statements from "./pages/Statements";
 import StatementDetail from "./pages/StatementDetail";
 import Transactions from "./pages/Transactions";
@@ -59,6 +60,7 @@ function App() {
     <Routes>
       <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>

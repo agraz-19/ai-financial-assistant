@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "../../context/useAuth";
 import {
   Search,
   Sparkles,
@@ -7,11 +8,14 @@ import {
   PiggyBank,
   Bot,
   ArrowRight,
-  User,
+  
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export default function AIHero({ data }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const displayName = user?.first_name || user?.username || "there";
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const savings = Number(data?.savings ?? 0);

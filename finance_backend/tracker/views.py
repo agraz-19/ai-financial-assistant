@@ -25,6 +25,7 @@ import csv
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import HttpResponse
+from django.contrib.auth import get_user_model
 # --- Template views (Phase 1) ---------------------------------------------
 
 class HomeView(TemplateView):
@@ -175,15 +176,15 @@ class StatementViewSet(viewsets.ModelViewSet):
         return context
 
     def create(self, request, *args, **kwargs):
-        """
-        Override create to handle full upload workflow.
-        Uses process_uploaded_statement() service for consistency.
-        """
-        file_obj = request.FILES.get("file")
-        if not file_obj:
-            return Response({"error": "No file provided"}, status=400)
-
-        # Read file bytes and compute hash BEFORE file_obj is consumed
+        try:
+            file_obj = request.FILES.get("file")
+            if not file_obj:
+                return Response({"error": "No file provided"}, status=400)
+            # ...existing body...
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return Response({"error": f"Upload failed: {e}"}, status=500)
+            # Read file bytes and compute hash BEFORE file_obj is consumed
         file_bytes = file_obj.read()
         file_hash = hashlib.sha256(file_bytes).hexdigest()
         file_obj.seek(0)
@@ -495,13 +496,36 @@ class AnalyticsAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        month = request.query_params.get("month")
-        context = build_month_analytics(request.user, month)
-        return Response(context)
-
+        scope = request.query_params.get("scope", "month")
+        if scope == "all":
+            from .services.analytics import build_all_time_analytics
+            return Response(build_all_time_analytics(request.user))
+        return Response(build_month_analytics(request.user, request.query_params.get("month")))
 def spa_index(request):
     index_path = settings.BASE_DIR / "frontend_dist" / "index.html"
     try:
         return HttpResponse(index_path.read_text(encoding="utf-8"), content_type="text/html")
     except FileNotFoundError:
         return HttpResponse("Frontend build not found.", status=500)
+def health(request):
+    return JsonResponse({"status": "ok"})
+
+class RegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        User = get_user_model()
+        username = (request.data.get("username") or "").strip()
+        email = (request.data.get("email") or "").strip()
+        password = request.data.get("password") or ""
+        if not username or not password:
+            return Response({"error": "Username and password required."}, status=400)
+        if User.objects.filter(username=username).exists():
+            return Response({"error": "Username taken."}, status=400)
+        try:
+            validate_password(password)
+        except DjangoValidationError as e:
+            return Response({"error": list(e.messages)}, status=400)
+        user = User.objects.create_user(username=username, email=email, password=password)
+        refresh = RefreshToken.for_user(user)
+        return Response({"access": str(refresh.access_token), "refresh": str(refresh)}, status=201)

@@ -11,3 +11,9 @@ export async function getAnalytics(month) {
     throw error;
   }
 }
+export async function getAnalytics({ month, scope = "month" } = {}) {
+  const params = { scope };
+  if (scope === "month" && month) params.month = month;
+  const response = await api.get("analytics/", { params });
+  return response.data;
+}
