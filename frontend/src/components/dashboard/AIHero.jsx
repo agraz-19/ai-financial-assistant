@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useAuth } from "../../context/useAuth";
 import {
   Search,
   Sparkles,
@@ -8,19 +7,18 @@ import {
   PiggyBank,
   Bot,
   ArrowRight,
-  
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/useAuth";
 
 export default function AIHero({ data }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const displayName = user?.first_name || user?.username || "there";
   const [query, setQuery] = useState("");
   const savings = Number(data?.savings ?? 0);
   const insightsCount = data?.ai_recommendations?.length ?? 0;
   const hasData = Boolean(data?.month_label && data.month_label !== "No data yet");
-
+  const displayName = user?.first_name || user?.username || "there";
   const goToChat = (prefill) => {
     navigate("/chat", prefill ? { state: { prefill } } : undefined);
   };
@@ -37,7 +35,7 @@ export default function AIHero({ data }) {
           <Sparkles size={26} />
         </div>
         <div>
-          <h1 className="text-4xl font-bold">Welcome back, {User.first_name} 👋</h1>
+          <h1 className="text-4xl font-bold">Welcome back,{displayName}👋</h1>
           <p className="text-blue-100 mt-2 text-lg">
             You saved ₹{savings.toLocaleString("en-IN")} this month.
           </p>

@@ -207,13 +207,13 @@ export default function Login() {
                 <ArrowRight className="h-4 w-4" />
               </button>
             </form>
-          </div>
           <p className="mt-6 text-center text-sm text-slate-600">
             New here?{" "}
             <Link to="/register" className="font-semibold text-cyan-700 hover:text-cyan-800">
               Create an account
             </Link>
           </p>
+          </div>
         </section>
       </div>
     </div>
