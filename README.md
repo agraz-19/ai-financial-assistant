@@ -144,9 +144,9 @@ For Docker/Render, also set `DB_ENGINE=postgres` plus `DB_NAME`, `DB_USER`, `DB_
 
 Actively developed portfolio project. Core upload → categorize → insight → chat pipeline is complete and deployed; ongoing polish on analytics, auth flows, and deployment hardenin
 
-# UPI Finance Tracker
+# AI Financial Assistant
 
-UPI Finance Tracker is a Django + React starter for uploading statements, parsing transactions, categorizing spend, and surfacing AI-assisted insights.
+ AI Financial Assistant is a Django + React starter for uploading statements, parsing transactions, categorizing spend, and surfacing AI-assisted insights.
 
 ## Layout
 
